@@ -62,6 +62,24 @@ class Content_API
       'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
     ));
 
+    register_rest_route('content-api/v1', '/product-categories/', array(
+      'methods' => 'GET',
+      'callback' => array($this, 'get_all_product_categories'),
+      'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
+    ));
+
+    register_rest_route('content-api/v1', '/product/categories/', array(
+      'methods' => 'GET',
+      'callback' => array($this, 'get_product_categories'),
+      'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
+    ));
+
+    register_rest_route('content-api/v1', '/product/categories/', array(
+      'methods' => 'PATCH',
+      'callback' => array($this, 'update_product_categories'),
+      'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
+    ));
+
     register_rest_route('content-api/v1', '/terms/', array(
       'methods' => 'GET',
       'callback' => array($this, 'get_terms'),
@@ -69,7 +87,7 @@ class Content_API
     ));
 
     register_rest_route('content-api/v1', '/terms/', array(
-      'methods' => 'PATCH',
+      'methods' => 'PUT',
       'callback' => array($this, 'update_terms'),
       'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
     ));
@@ -80,8 +98,14 @@ class Content_API
       'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
     ));
 
+    register_rest_route('content-api/v1', '/product/attributes/', array(
+      'methods' => 'GET',
+      'callback' => array($this, 'get_product_attributes'),
+      'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
+    ));
+
     register_rest_route('content-api/v1', '/attributes/', array(
-      'methods' => 'PATCH',
+      'methods' => 'PUT',
       'callback' => array($this, 'update_attributes'),
       'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
     ));
@@ -247,7 +271,7 @@ class Content_API
    */
   public function get_product(WP_REST_Request $request) {
     $this->options = get_option('content_api_options_polyplugins');
-
+    
     $product_id                = $request->get_param('product_id');
     $sku                       = $request->get_param('sku');
     $missing_description       = $request->get_param('missing_description') ? true : false;
@@ -357,7 +381,7 @@ class Content_API
    */
   public function update_product(WP_REST_Request $request) {
     $this->options = get_option('content_api_options_polyplugins');
-
+    
     $fields            = $request->get_json_params();
     $product_id        = isset($fields['product_id']) ? absint($fields['product_id']) : 0;
     $name              = isset($fields['name']) ? sanitize_text_field($fields['name']) : '';
@@ -541,6 +565,232 @@ class Content_API
       'message' => 'Product updated successfully'
     ), 200);
   }
+  
+  /**
+   * Get all product categories
+   *
+   * @param  mixed $request
+   * @return void
+   */
+  public function get_all_product_categories(WP_REST_Request $request) {
+    $this->options = get_option('content_api_options_polyplugins');
+    
+    $args = array(
+      'taxonomy'   => 'product_cat',
+      'hide_empty' => false,
+      'orderby'    => 'name',
+      'order'      => 'ASC',
+    );
+
+    $terms = get_terms($args);
+
+    if (is_wp_error($terms)) {
+      return new WP_Error('fetch_failed', 'Failed to fetch categories', array('status' => 500));
+    }
+
+    // Map terms by ID
+    $term_map = array();
+    foreach ($terms as $term) {
+      $term_map[$term->term_id] = array(
+        'id'       => $term->term_id,
+        'name'     => $term->name,
+        'slug'     => $term->slug,
+        'children' => array(),
+        'parent'   => $term->parent,
+      );
+    }
+
+    // Build the category tree
+    $tree = array();
+    foreach ($term_map as $id => &$term) {
+      if ($term['parent'] && isset($term_map[$term['parent']])) {
+        $term_map[$term['parent']]['children'][] = &$term;
+      } else {
+        $tree[] = &$term;
+      }
+    }
+
+    unset($term); // Break the reference
+
+    // Prepare category data
+    $category_data = array();
+    foreach ($tree as $term) {
+      $category_data[] = $this->build_category_hierarchy($term);
+    }
+
+    return new WP_REST_Response(array(
+      'success'    => true,
+      'categories' => $category_data
+    ), 200);
+  }
+  
+  /**
+   * Get product categories
+   *
+   * @param  mixed $request
+   * @return void
+   */
+  public function get_product_categories(WP_REST_Request $request) {
+    $this->options = get_option('content_api_options_polyplugins');
+    
+    $fields            = $request->get_json_params();
+    $product_id        = isset($fields['product_id']) ? absint($fields['product_id']) : 0;
+    $sku               = isset($fields['sku']) ? sanitize_text_field($fields['sku']) : '';
+
+    if (!$product_id && !$sku) {
+      return new WP_Error('missing_identifier', 'Product ID or SKU is required', array('status' => 400));
+    }
+
+    if ($product_id) {
+      if (!is_numeric($product_id)) {
+        return new WP_Error('product_id_invalid', 'Product ID is invalid', array('status' => 400));
+      }
+    }
+
+    if ($sku) {
+      if ($sku !== sanitize_text_field($sku)) {
+        return new WP_Error('sku_invalid', 'SKU is invalid', array('status' => 400));
+      }
+    }
+
+    if ($product_id && $sku) {
+      return new WP_Error('conflicting_identifiers', 'Both Product ID and SKU are provided. Please provide only one.', array('status' => 400));
+    }
+
+    if ($sku && !$product_id) {
+      $product_id_by_sku = wc_get_product_id_by_sku($sku);
+
+      if ($product_id_by_sku) {
+        $product = wc_get_product($product_id_by_sku);
+      } else {
+        return new WP_Error('product_not_found', 'Product not found with provided SKU', array('status' => 404));
+      }
+    } 
+    elseif ($product_id) {
+      $product = wc_get_product($product_id);
+    }
+    
+    if (!isset($product) || !$product) {
+      return new WP_Error('product_not_found', 'Product not found', array('status' => 404));
+    }
+
+    $categories = wp_get_post_terms($product->get_id(), 'product_cat');
+
+    // Map terms by ID
+    $term_map = array();
+    foreach ($categories as $term) {
+      $term_map[$term->term_id] = array(
+        'id'       => $term->term_id,
+        'name'     => $term->name,
+        'slug'     => $term->slug,
+        'children' => array(),
+        'parent'   => $term->parent,
+      );
+    }
+
+    // Build the category tree
+    $tree = array();
+
+    foreach ($term_map as $id => &$term) {
+      if ($term['parent'] && isset($term_map[$term['parent']])) {
+        $term_map[$term['parent']]['children'][] = &$term;
+      } else {
+        $tree[] = &$term;
+      }
+    }
+    unset($term); // Break the reference
+
+    // Prepare category data
+    $category_data = array();
+    foreach ($tree as $term) {
+      $category_data[] = $this->build_category_hierarchy($term);
+    }
+
+    return new WP_REST_Response(array(
+      'success'   => true,
+      'product_id'=> $product->get_id(),
+      'categories'=> $category_data
+    ), 200);
+  }
+  
+  /**
+   * Update product categories
+   *
+   * @param  mixed $request
+   * @return void
+   */
+  public function update_product_categories(WP_REST_Request $request) {
+    $this->options = get_option('content_api_options_polyplugins');
+    
+    $fields     = $request->get_json_params();
+    $product_id = isset($fields['product_id']) ? absint($fields['product_id']) : 0;
+    $sku        = isset($fields['sku']) ? sanitize_text_field($fields['sku']) : '';
+    $categories = isset($fields['categories']) ? array_map('absint', $fields['categories']) : array();
+
+    if (!$product_id && !$sku) {
+      return new WP_Error('missing_identifier', 'Product ID or SKU is required', array('status' => 400));
+    }
+
+    if ($product_id) {
+      if (!is_numeric($product_id)) {
+        return new WP_Error('product_id_invalid', 'Product ID is invalid', array('status' => 400));
+      }
+    }
+
+    if ($sku) {
+      if ($sku !== sanitize_text_field($sku)) {
+        return new WP_Error('sku_invalid', 'SKU is invalid', array('status' => 400));
+      }
+    }
+
+    if ($product_id && $sku) {
+      return new WP_Error('conflicting_identifiers', 'Both Product ID and SKU are provided. Please provide only one.', array('status' => 400));
+    }
+
+    if ($sku && !$product_id) {
+      $product_id_by_sku = wc_get_product_id_by_sku($sku);
+
+      if ($product_id_by_sku) {
+        $product = wc_get_product($product_id_by_sku);
+      } else {
+        return new WP_Error('product_not_found', 'Product not found with provided SKU', array('status' => 404));
+      }
+    } 
+    elseif ($product_id) {
+      $product = wc_get_product($product_id);
+    }
+    
+    if (!isset($product) || !$product) {
+      return new WP_Error('product_not_found', 'Product not found', array('status' => 404));
+    }
+
+    if (!$categories) {
+      return new WP_Error('invalid_input', 'Categories empty', array('status' => 400));
+    }
+
+    // Validate that all categories exist
+    foreach ($categories as $cat_id) {
+      $term = get_term($cat_id, 'product_cat');
+
+      if (!$term || is_wp_error($term)) {
+        return new WP_Error('category_not_found', "Category ID {$cat_id} does not exist", array('status' => 404));
+      }
+    }
+
+    // Get current categories on the product
+    $existing_cat_ids = wp_get_object_terms($product_id, 'product_cat', array('fields' => 'ids'));
+
+    // Merge and deduplicate
+    $final_cat_ids = array_unique(array_merge($existing_cat_ids, $categories));
+
+    wp_set_object_terms($product_id, $final_cat_ids, 'product_cat');
+
+    return new WP_REST_Response(array(
+      'success' => true,
+      'product_id' => $product_id,
+      'assigned_category_ids' => $final_cat_ids
+    ), 200);
+  }
 
   /**
    * Get terms
@@ -550,7 +800,7 @@ class Content_API
    */
   public function get_terms(WP_REST_Request $request) {
     $this->options = get_option('content_api_options_polyplugins');
-
+    
     // Get the data from the request
     $params = $request->get_params();
 
@@ -609,7 +859,7 @@ class Content_API
    */
   public function update_terms(WP_REST_Request $request) {
     $this->options = get_option('content_api_options_polyplugins');
-
+    
     // Get the JSON data from the request
     $params = $request->get_json_params();
 
@@ -728,6 +978,79 @@ class Content_API
   }
 
   /**
+   * Get all products with attributes
+   *
+   * @param  WP_REST_Request $request
+   * @return WP_REST_Response
+   */
+  public function get_product_attributes(WP_REST_Request $request)
+  {
+    $this->options = get_option('content_api_options_polyplugins');
+    
+    $product_id = $request->get_param('product_id');
+    $sku        = $request->get_param('sku');
+
+    if (!$product_id && !$sku) {
+      return new WP_Error('missing_identifier', 'Product ID or SKU is required', array('status' => 400));
+    }
+
+    if ($product_id) {
+      if (!is_numeric($product_id)) {
+        return new WP_Error('product_id_invalid', 'Product ID is invalid', array('status' => 400));
+      }
+    }
+
+    if ($sku) {
+      if ($sku !== sanitize_text_field($sku)) {
+        return new WP_Error('sku_invalid', 'SKU is invalid', array('status' => 400));
+      }
+    }
+
+    if ($product_id && $sku) {
+      return new WP_Error('conflicting_identifiers', 'Both Product ID and SKU are provided. Please provide only one.', array('status' => 400));
+    }
+
+    if ($sku && !$product_id) {
+      $product_id_by_sku = wc_get_product_id_by_sku($sku);
+
+      if ($product_id_by_sku) {
+        $product = wc_get_product($product_id_by_sku);
+      } else {
+        return new WP_Error('product_not_found', 'Product not found with provided SKU', array('status' => 404));
+      }
+    } 
+    elseif ($product_id) {
+      $product = wc_get_product($product_id);
+    }
+    
+    if (!isset($product) || !$product) {
+      return new WP_Error('product_not_found', 'Product not found', array('status' => 404));
+    }
+
+    $attributes = array();
+
+    foreach ($product->get_attributes() as $attribute_key => $attribute) {
+      if ($attribute->is_taxonomy()) {
+        $terms = wp_get_post_terms($product->get_id(), $attribute->get_name(), array('fields' => 'names'));
+        $attributes[$attribute->get_name()] = $terms;
+      } else {
+        $attributes[$attribute->get_name()] = $attribute->get_options();
+      }
+    }
+
+    $product_data = array(
+      'id'         => $product->get_id(),
+      'name'       => $product->get_name(),
+      'attributes' => $attributes,
+    );
+
+    return new WP_REST_Response(array(
+      'success' => true,
+      'data'    => $product_data,
+    ), 200);
+  }
+
+  /**
    * Update product attributes
    *
    * @param  WP_REST_Request $request
@@ -736,7 +1059,7 @@ class Content_API
   public function update_attributes(WP_REST_Request $request)
   {
     $this->options = get_option('content_api_options_polyplugins');
-
+    
     // Get the JSON data from the request
     $params = $request->get_json_params();
 
@@ -746,12 +1069,14 @@ class Content_API
 
     // Extract product ID
     $product_id = isset($params['id']) ? intval($params['id']) : 0;
+    
     if (!$product_id || !get_post($product_id) || get_post_type($product_id) !== 'product') {
       return new WP_Error('invalid_product', "Invalid product ID", array('status' => 400));
     }
 
     // Get the WooCommerce product object
     $product = wc_get_product($product_id);
+
     if (!$product) {
       return new WP_Error('product_not_found', "Product not found", array('status' => 404));
     }
@@ -774,7 +1099,7 @@ class Content_API
 
       $attr_name  = sanitize_title($attribute['name']);
       $attr_value = is_array($attribute['value']) ? array_map('sanitize_text_field', $attribute['value']) : array(sanitize_text_field($attribute['value']));
-      $taxonomy = wc_attribute_taxonomy_name($attr_name);
+      $taxonomy   = wc_attribute_taxonomy_name($attr_name);
 
       // Check if it's a global attribute (taxonomy-based)
       if (taxonomy_exists($taxonomy)) {
@@ -918,11 +1243,11 @@ class Content_API
    * @return array $sanitary_values Array of sanitized options
    */
   public function sanitize($input) {
-		$sanitary_values = array();
+    $sanitary_values = array();
 
     if (isset($input['token']) && $input['token']) {
-			$sanitary_values['token'] = sanitize_text_field($input['token']);
-		}
+      $sanitary_values['token'] = sanitize_text_field($input['token']);
+    }
 
     return $sanitary_values;
   }
@@ -944,7 +1269,7 @@ class Content_API
     
     return true;
   }
-
+  
   /**
    * Create a category if it doesn't already exist
    *
@@ -968,7 +1293,7 @@ class Content_API
     // Return false if there was an error
     return false;
   }
-
+  
   /**
    * Get product IDs with missing descriptions
    *
@@ -989,6 +1314,30 @@ class Content_API
     );
 
     return $product_ids;
+  }
+
+  /**
+   * Build category hierarchy
+   *
+   * @param  mixed $term
+   * @return array $category
+   */
+  private function build_category_hierarchy($term) {
+    $category = array(
+      'id'       => $term['id'],
+      'name'     => $term['name'],
+      'slug'     => $term['slug'],
+      'children' => array(),
+    );
+
+    // Recursively add children if they exist
+    if (!empty($term['children'])) {
+      foreach ($term['children'] as $child) {
+        $category['children'][] = $this->build_category_hierarchy($child);
+      }
+    }
+
+    return $category;
   }
     
   /**
