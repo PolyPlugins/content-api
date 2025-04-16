@@ -2,7 +2,7 @@
 Contributors: polyplugins
 Tags: content api, rest api, content, creative, api
 Tested up to: 6.8
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 Requires PHP: 7.4
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -29,7 +29,7 @@ With features like bulk updates for product attributes, streamlined content mana
 * Update attributes
 * Fetch terms
 * Update terms
-* Capability to ass Yoast title, description, social titles, social descriptions, and social images when adding a post or updating a product
+* Capability to add Yoast title, description, social titles, social descriptions, and social images when adding a post or updating a product
 * Secure access through API tokens for authentication
 * Admin page to manage the plugin settings, including the API token
 
