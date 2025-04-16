@@ -4,7 +4,7 @@
  * Plugin Name: Content API
  * Plugin URI: https://www.polyplugins.com/contact/
  * Description: Adds various endpoints to create content
- * Version: 1.0.0
+ * Version: 1.0.1
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Poly Plugins
@@ -87,7 +87,7 @@ class Content_API
     ));
 
     register_rest_route('content-api/v1', '/terms/', array(
-      'methods' => 'PUT',
+      'methods' => array('PATCH', 'PUT'),
       'callback' => array($this, 'update_terms'),
       'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
     ));
@@ -98,15 +98,27 @@ class Content_API
       'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
     ));
 
+    register_rest_route('content-api/v1', '/attributes/', array(
+      'methods' => array('PATCH', 'PUT'),
+      'callback' => array($this, 'update_attributes'),
+      'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
+    ));
+
     register_rest_route('content-api/v1', '/product/attributes/', array(
       'methods' => 'GET',
       'callback' => array($this, 'get_product_attributes'),
       'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
     ));
 
-    register_rest_route('content-api/v1', '/attributes/', array(
-      'methods' => 'PUT',
-      'callback' => array($this, 'update_attributes'),
+    register_rest_route('content-api/v1', '/product/brands/', array(
+      'methods' => 'GET',
+      'callback' => array($this, 'get_product_brands'),
+      'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
+    ));
+
+    register_rest_route('content-api/v1', '/product/brands/', array(
+      'methods' => 'PATCH',
+      'callback' => array($this, 'update_product_brands'),
       'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
     ));
   }
@@ -997,6 +1009,8 @@ class Content_API
     if ($product_id) {
       if (!is_numeric($product_id)) {
         return new WP_Error('product_id_invalid', 'Product ID is invalid', array('status' => 400));
+      } else {
+        $product_id = absint($product_id);
       }
     }
 
@@ -1139,6 +1153,126 @@ class Content_API
       'success'    => true,
       'message'    => "Product attributes updated successfully.",
       'product_id' => $product_id,
+    ), 200);
+  }
+
+  /**
+   * Get product brands
+   *
+   * @param  WP_REST_Request $request
+   * @return WP_REST_Response
+   */
+  public function get_product_brands(WP_REST_Request $request) {
+    $params   = $request->get_params();
+    $taxonomy = isset($params['taxonomy']) ? sanitize_text_field($params['taxonomy']) : 'product_brand';
+    $limit    = isset($params['limit']) && is_numeric($params['limit']) ? absint($params['limit']) : false;
+    
+    $args = array(
+      'taxonomy'   => $taxonomy,
+      'hide_empty' => false,
+    );
+
+    if ($limit) {
+      $args['number'] = $limit;
+    }
+
+    $terms = get_terms($args);
+
+    if (is_wp_error($terms)) {
+      return new WP_Error('get_terms_failed', 'Failed to get product brands', array('status' => 500));
+    }
+
+    $brands = array();
+
+    foreach ($terms as $term) {
+      $brands[] = array(
+        'id'    => $term->term_id,
+        'name'  => $term->name,
+        'slug'  => $term->slug,
+        'count' => $term->count,
+      );
+    }
+
+    return new WP_REST_Response(array(
+      'success' => true,
+      'data'    => $brands,
+    ), 200);
+  }
+
+  /**
+   * Update product brands
+   *
+   * @param  WP_REST_Request $request
+   * @return WP_REST_Response
+   */
+  public function update_product_brands(WP_REST_Request $request) {
+    $params       = $request->get_json_params();
+    $product_id   = isset($params['product_id']) && is_numeric($params['product_id']) ? (int) $params['product_id'] : 0;
+    $brands       = isset($params['brands']) ? array_map('sanitize_text_field', $params['brands']) : array();
+    $taxonomy     = isset($params['taxonomy']) ? $params['taxonomy'] : 'product_brand';
+    $append       = empty($params['append']);
+    $create_brand = !empty($params['create_brand']);
+
+    if (!$product_id || !is_numeric($product_id)) {
+      return new WP_Error('invalid_product_id', 'Valid Product ID is required', array('status' => 400));
+    }
+
+    if (!is_array($brands) || empty($brands)) {
+      return new WP_Error('invalid_brands', 'Brands must be a non-empty array', array('status' => 400));
+    }
+
+    $product = wc_get_product($product_id);
+
+    if (!$product) {
+      return new WP_Error('product_not_found', 'Product not found', array('status' => 404));
+    }
+
+    $term_ids = array();
+
+    foreach ($brands as $brand) {
+      $term = null;
+
+      // Numeric: try by ID
+      if (is_numeric($brand)) {
+        $term = get_term($brand, $taxonomy);
+      } else {
+        // First try by slug
+        $term = get_term_by('slug', sanitize_title($brand), $taxonomy);
+
+        // Then try by name if slug didn't match
+        if (!$term) {
+          $term = get_term_by('name', $brand, $taxonomy);
+        }
+
+        // If still not found, create it (only if allowed)
+        if (!$term && $create_brand) {
+          $new_term = wp_insert_term($brand, $taxonomy);
+
+          if (!is_wp_error($new_term)) {
+            $term = get_term($new_term['term_id'], $taxonomy);
+          }
+        }
+      }
+
+      if ($term && !is_wp_error($term)) {
+        $term_ids[] = intval($term->term_id);
+      }
+    }
+
+    if (empty($term_ids)) {
+      return new WP_Error('no_valid_terms', 'No valid brand terms found or created', array('status' => 400));
+    }
+
+    $result = wp_set_object_terms($product_id, $term_ids, $taxonomy, $append);
+
+    if (is_wp_error($result)) {
+      return new WP_Error('update_failed', 'Failed to update product brands', array('status' => 500));
+    }
+
+    return new WP_REST_Response(array(
+      'success' => true,
+      'message' => 'Product brands updated successfully',
+      'data'    => $term_ids,
     ), 200);
   }
   

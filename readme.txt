@@ -1,7 +1,7 @@
 === Content API ===
 Contributors: polyplugins
 Tags: content api, rest api, content, creative, api
-Tested up to: 6.7
+Tested up to: 6.8
 Stable tag: 1.0.0
 Requires PHP: 7.4
 License: GPLv3
@@ -81,3 +81,12 @@ Yes, the plugin supports uploading images to the WordPress media library via the
 
 1. General Settings
 
+
+== Changelog ==
+
+= 1.0.1 =
+* Added: [Get Product Brands](https://www.polyplugins.com/docs/content-api/api/get-product-brands/) endpoint
+* Added: [Update Product Brands](https://www.polyplugins.com/docs/content-api/api/update-product-brands/) endpoint
+
+= 1.0.0 =
+* Initial Release
