@@ -1,4 +1,6 @@
-## Description
+![Content API Banner](.wordpress-org/banner-1880x609.png)
+
+## About
 
 Content API offers a powerful and flexible solution for managing your site’s posts, products, SEO settings, and more through custom endpoints. By creating tailored REST API endpoints, the plugin enables you to perform actions such as updating product attributes, managing content, and even optimizing SEO all from external systems or custom-built applications.
 
@@ -60,3 +62,14 @@ Yes, the plugin's custom REST API endpoints are designed to be easily integrated
 ### Can I upload images through the API?
 
 Yes, the plugin supports uploading images to the WordPress media library via the custom API. You can include image URLs in your requests, and the plugin will handle the upload process.
+
+## Changelog
+
+### 1.0.1
+
+* Added: [Get Product Brands](https://www.polyplugins.com/docs/content-api/api/get-product-brands/) endpoint
+* Added: [Update Product Brands](https://www.polyplugins.com/docs/content-api/api/update-product-brands/) endpoint
+
+### 1.0.0
+
+* Initial Release
