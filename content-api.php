@@ -4,7 +4,7 @@
  * Plugin Name: Content API
  * Plugin URI: https://www.polyplugins.com/contact/
  * Description: Adds various endpoints to create content
- * Version: 1.0.1
+ * Version: 1.0.2
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Poly Plugins
@@ -107,6 +107,24 @@ class Content_API
     register_rest_route('content-api/v1', '/product/attributes/', array(
       'methods' => 'GET',
       'callback' => array($this, 'get_product_attributes'),
+      'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
+    ));
+
+    register_rest_route('content-api/v1', '/taxonomy/brand/', array(
+      'methods' => 'GET',
+      'callback' => array($this, 'get_brand'),
+      'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
+    ));
+
+    register_rest_route('content-api/v1', '/taxonomy/brand/', array(
+      'methods' => 'PATCH',
+      'callback' => array($this, 'update_brand'),
+      'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
+    ));
+
+    register_rest_route('content-api/v1', '/taxonomy/brand/', array(
+      'methods' => 'POST',
+      'callback' => array($this, 'create_brand'),
       'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
     ));
 
@@ -802,6 +820,292 @@ class Content_API
       'product_id' => $product_id,
       'assigned_category_ids' => $final_cat_ids
     ), 200);
+  }
+
+  /**
+   * Get product brands
+   *
+   * @param  WP_REST_Request $request
+   * @return WP_REST_Response
+   */
+  public function get_brand(WP_REST_Request $request) {
+    $params   = $request->get_params();
+    $taxonomy = isset($params['taxonomy']) ? sanitize_text_field($params['taxonomy']) : 'product_brand';
+    $id       = isset($params['id']) ? absint($params['id']) : 0;
+    $slug     = isset($params['slug']) ? sanitize_title($params['slug']) : '';
+    $name     = isset($params['name']) ? sanitize_text_field($params['name']) : '';
+
+    if ($id) {
+      $term = get_term($id, $taxonomy);
+    } elseif ($slug) {
+      $term = get_term_by('slug', $slug, $taxonomy);
+    } elseif ($name) {
+      $term = get_term_by('name', $name, $taxonomy);
+    }
+
+    if (empty($term) || is_wp_error($term)) {
+      return new WP_Error('no_brand_found', "No brand found under the " . $taxonomy . " taxonomy.", array('status' => 400));
+    }
+
+    $term_id    = $term->term_id;
+    $brand_data = (array) $term;
+
+    // Get thumbnail ID and URL
+    $thumbnail_id  = get_term_meta($term_id, 'thumbnail_id', true);
+    $thumbnail_url = $thumbnail_id ? wp_get_attachment_url($thumbnail_id) : '';
+
+    if ($thumbnail_url) {
+      $brand_data['thumbnail'] = $thumbnail_url;
+    }
+
+    // Get Yoast SEO meta fields
+    $yoast_option = get_option('wpseo_taxonomy_meta');
+    $yoast_data   = [];
+
+    if (isset($yoast_option[$taxonomy]) && isset($yoast_option[$taxonomy][$term_id])) {
+      $yoast_raw = $yoast_option[$taxonomy][$term_id];
+      $yoast_data = array(
+        'title'       => $yoast_raw['wpseo_title'] ?? '',
+        'description' => $yoast_raw['wpseo_desc'] ?? '',
+        'premium' => array(
+          'social_appearance' => array(
+            'title'       => $yoast_raw['wpseo_opengraph-title'] ?? '',
+            'description' => $yoast_raw['wpseo_opengraph-description'] ?? '',
+            'image'       => $yoast_raw['wpseo_opengraph-image'] ?? '',
+          ),
+          'x' => array(
+            'title'       => $yoast_raw['wpseo_twitter-title'] ?? '',
+            'description' => $yoast_raw['wpseo_twitter-description'] ?? '',
+            'image'       => $yoast_raw['wpseo_twitter-image'] ?? '',
+          )
+        )
+      );
+    }
+
+    $brand_data['yoast'] = $yoast_data;
+
+    return new WP_REST_Response(array(
+      'success' => true,
+      'data' => $brand_data,
+    ), 201);
+  }
+
+  /**
+   * Get product brands
+   *
+   * @param  WP_REST_Request $request
+   * @return WP_REST_Response
+   */
+  public function update_brand(WP_REST_Request $request) {
+    $fields      = $request->get_json_params();
+    $id          = isset($fields['id']) ? absint($fields['id']) : 0;
+    $name        = isset($fields['name']) ? sanitize_text_field($fields['name']) : '';
+    $description = isset($fields['description']) ? wp_kses_post($fields['description']) : '';
+    $slug        = isset($fields['slug']) ? sanitize_title($fields['slug']) : '';
+    $parent_id   = isset($fields['parent']) ? absint($fields['parent']) : '';
+    $taxonomy    = isset($fields['taxonomy']) ? sanitize_text_field($fields['taxonomy']) : 'product_brand';
+
+    // Basic input validation
+    if (!$id) {
+      return new WP_Error('missing_identifier', 'Brand ID is required', array('status' => 400));
+    }
+
+    $term = get_term($id, $taxonomy);
+
+    if (!$term || is_wp_error($term)) {
+      return new WP_Error('brand_not_found', 'Brand not found', array('status' => 404));
+    }
+
+    $term_id = $term->term_id;
+
+    $term_args = [];
+
+    if ($name) {
+      $term_args['name'] = $name;
+    }
+
+    if ($description) {
+      $term_args['description'] = $description;
+    }
+
+    if ($slug) {
+      $term_args['slug'] = $slug;
+    }
+
+    if ($parent_id > 0) {
+      $parent_term = get_term($parent_id, $taxonomy);
+
+      if ($parent_term && !is_wp_error($parent_term)) {
+        $term_args['parent'] = $parent_id;
+      } else {
+        return new WP_Error('invalid_parent', 'The specified parent brand does not exist.', array('status' => 400));
+      }
+    } elseif ($parent_id === 0) {
+      $term_args['parent'] = 0; // Remove parent
+    }
+
+    if (!empty($term_args)) {
+      $result = wp_update_term($term_id, $taxonomy, $term_args);
+      
+      if (is_wp_error($result)) {
+        return new WP_Error('term_update_failed', 'Failed to update brand term', array('status' => 500));
+      }
+    }
+
+    // Update Yoast fields
+    if (isset($fields['yoast']) && is_array($fields['yoast'])) {
+      $yoast_option = get_option('wpseo_taxonomy_meta');
+
+      if (!isset($yoast_option[$taxonomy])) {
+        $yoast_option[$taxonomy] = [];
+      }
+
+      if (!isset($yoast_option[$taxonomy][$term_id])) {
+        $yoast_option[$taxonomy][$term_id] = [];
+      }
+
+      $yoast_input = $fields['yoast'];
+
+      if (isset($yoast_input['title']) && $yoast_input['title']) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_title'] = $yoast_input['title'];
+      }
+
+      if (isset($yoast_input['description']) && $yoast_input['description']) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_desc'] = $yoast_input['description'];
+      }
+
+      if (isset($yoast_input['premium']['social_appearance']['title']) && $yoast_input['premium']['social_appearance']['title']) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_opengraph-title'] = $yoast_input['premium']['social_appearance']['title'];
+      }
+      
+      if (isset($yoast_input['premium']['social_appearance']['description']) && $yoast_input['premium']['social_appearance']['description']) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_opengraph-description'] = $yoast_input['premium']['social_appearance']['description'];
+      }
+      
+      if (isset($yoast_input['premium']['social_appearance']['image']) && $yoast_input['premium']['social_appearance']['image']) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_opengraph-image'] = $yoast_input['premium']['social_appearance']['image'];
+      }
+      
+      if (isset($yoast_input['premium']['x']['title']) && $yoast_input['premium']['x']['title']) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_twitter-title'] = $yoast_input['premium']['x']['title'];
+      }
+      
+      if (isset($yoast_input['premium']['x']['description']) && $yoast_input['premium']['x']['description']) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_twitter-description'] = $yoast_input['premium']['x']['description'];
+      }
+      
+      if (isset($yoast_input['premium']['x']['image']) && $yoast_input['premium']['x']['image']) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_twitter-image'] = $yoast_input['premium']['x']['image'];
+      }
+
+      update_option('wpseo_taxonomy_meta', $yoast_option);
+    }
+
+    return new WP_REST_Response(array(
+      'success' => true,
+      'brand_id' => $term_id,
+      'message' => 'Brand updated successfully.'
+    ), 200);
+  }
+
+  /**
+   * Create a new product brand
+   *
+   * @param  WP_REST_Request $request
+   * @return WP_REST_Response
+   */
+  public function create_brand(WP_REST_Request $request) {
+    $fields      = $request->get_json_params();
+    $name        = isset($fields['name']) ? sanitize_text_field($fields['name']) : '';
+    $description = isset($fields['description']) ? wp_kses_post($fields['description']) : '';
+    $slug        = isset($fields['slug']) ? sanitize_title($fields['slug']) : '';
+    $parent_id   = isset($fields['parent']) ? absint($fields['parent']) : 0;
+    $taxonomy    = isset($fields['taxonomy']) ? sanitize_text_field($fields['taxonomy']) : 'product_brand';
+
+    // Validate name
+    if (empty($name)) {
+      return new WP_Error('missing_name', 'Brand name is required.', array('status' => 400));
+    }
+
+    $term_args = array(
+      'description' => $description,
+      'slug'        => $slug,
+      'parent'      => 0
+    );
+
+    if ($parent_id > 0) {
+      $parent_term = get_term($parent_id, $taxonomy);
+
+      if ($parent_term && !is_wp_error($parent_term)) {
+        $term_args['parent'] = $parent_id;
+      } else {
+        return new WP_Error('invalid_parent', 'The specified parent brand does not exist.', array('status' => 400));
+      }
+    }
+
+    // Create the term
+    $result = wp_insert_term($name, $taxonomy, $term_args);
+
+    if (is_wp_error($result)) {
+      return new WP_Error('term_creation_failed', $result->get_error_message(), array('status' => 500));
+    }
+
+    $term_id = $result['term_id'];
+
+    // Update Yoast fields
+    if (isset($fields['yoast']) && is_array($fields['yoast'])) {
+      $yoast_option = get_option('wpseo_taxonomy_meta');
+
+      if (!isset($yoast_option[$taxonomy])) {
+        $yoast_option[$taxonomy] = array();
+      }
+
+      if (!isset($yoast_option[$taxonomy][$term_id])) {
+        $yoast_option[$taxonomy][$term_id] = array();
+      }
+
+      $yoast_input = $fields['yoast'];
+
+      if (!empty($yoast_input['title'])) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_title'] = $yoast_input['title'];
+      }
+
+      if (!empty($yoast_input['description'])) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_desc'] = $yoast_input['description'];
+      }
+
+      if (!empty($yoast_input['premium']['social_appearance']['title'])) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_opengraph-title'] = $yoast_input['premium']['social_appearance']['title'];
+      }
+
+      if (!empty($yoast_input['premium']['social_appearance']['description'])) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_opengraph-description'] = $yoast_input['premium']['social_appearance']['description'];
+      }
+
+      if (!empty($yoast_input['premium']['social_appearance']['image'])) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_opengraph-image'] = $yoast_input['premium']['social_appearance']['image'];
+      }
+
+      if (!empty($yoast_input['premium']['x']['title'])) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_twitter-title'] = $yoast_input['premium']['x']['title'];
+      }
+
+      if (!empty($yoast_input['premium']['x']['description'])) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_twitter-description'] = $yoast_input['premium']['x']['description'];
+      }
+
+      if (!empty($yoast_input['premium']['x']['image'])) {
+        $yoast_option[$taxonomy][$term_id]['wpseo_twitter-image'] = $yoast_input['premium']['x']['image'];
+      }
+
+      update_option('wpseo_taxonomy_meta', $yoast_option);
+    }
+
+    return new WP_REST_Response(array(
+      'success'  => true,
+      'brand_id' => $term_id,
+      'message'  => 'Brand created successfully.'
+    ), 201);
   }
 
   /**
