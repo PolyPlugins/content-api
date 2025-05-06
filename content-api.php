@@ -4,7 +4,7 @@
  * Plugin Name: Content API
  * Plugin URI: https://www.polyplugins.com/contact/
  * Description: Adds various endpoints to create content
- * Version: 1.0.3
+ * Version: 1.0.4
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Poly Plugins
@@ -16,6 +16,7 @@
 namespace PolyPlugins;
 
 use WC_Product_Attribute;
+use WC_Product_Simple;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -59,6 +60,12 @@ class Content_API
     register_rest_route('content-api/v1', '/product/', array(
       'methods' => 'PATCH',
       'callback' => array($this, 'update_product'),
+      'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
+    ));
+
+    register_rest_route('content-api/v1', '/product/', array(
+      'methods' => 'POST',
+      'callback' => array($this, 'create_product'),
       'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
     ));
 
@@ -413,11 +420,30 @@ class Content_API
     $short_description = $product->get_short_description();
     $regular_price     = $product->get_regular_price();
     $sale_price        = $product->get_sale_price();
+    $map_price         = $product->get_meta('_map_price');
+    $cost              = $product->get_meta('_cost');
     $sku               = $product->get_sku();
     $stock_status      = $product->get_stock_status();
     $stock_quantity    = $product->get_stock_quantity();
     $tags              = wp_get_post_terms($product->get_id(), 'product_tag', array('fields' => 'names'));
-    $images            = array_map(function($image) {return $image['src'];}, $product->get_gallery_image_ids() ? wp_get_attachment_image_src($product->get_image_id(), 'full') : array());
+    $categories        = wp_get_post_terms($product->get_id(), 'product_cat', array('fields' => 'names'));
+
+    $images      = array();
+    $gallery_ids = $product->get_gallery_image_ids();
+
+    foreach ($gallery_ids as $id) {
+      $image = wp_get_attachment_image_src($id, 'full');
+      if ($image) {
+        $images[] = $image[0];
+      }
+    }
+
+    $featured_image  = wp_get_attachment_image_src($product->get_image_id(), 'full');
+
+    if ($featured_image) {
+      array_unshift($images, $featured_image[0]);
+    }
+
     $featured_image    = wp_get_attachment_url($product->get_image_id());
     
     $response_data     = array(
@@ -428,10 +454,13 @@ class Content_API
       'short_description' => $short_description ? wp_kses_post($short_description) : '',
       'price'             => $regular_price ? floatval($regular_price) : '',
       'sale_price'        => $sale_price ? floatval($sale_price) : '',
+      'map_price'         => $map_price ? floatval($map_price) : '',
+      'cost'              => $cost ? floatval($cost) : '',
       'sku'               => $sku ? sanitize_text_field($sku) : '',
       'stock_status'      => $stock_status ? sanitize_text_field($product->get_stock_status()) : '',
       'stock_quantity'    => $stock_quantity ? absint($product->get_stock_quantity()) : 0,
       'tags'              => $tags ? array_map('sanitize_text_field', $tags) : array(),
+      'categories'        => $categories ? array_map('sanitize_text_field', $categories) : array(),
       'images'            => $images ? array_map('esc_url_raw', $images) : array(),
       'featured_image'    => $featured_image ? esc_url_raw($featured_image) : '',
     );
@@ -456,10 +485,13 @@ class Content_API
     $short_description = isset($fields['short_description']) ? wp_kses_post($fields['short_description']) : '';
     $price             = isset($fields['price']) ? floatval($fields['price']) : '';
     $sale_price        = isset($fields['sale_price']) ? floatval($fields['sale_price']) : '';
+    $map_price         = isset($fields['map_price']) ? floatval($fields['map_price']) : '';
+    $cost              = isset($fields['cost']) ? floatval($fields['cost']) : '';
     $sku               = isset($fields['sku']) ? sanitize_text_field($fields['sku']) : '';
     $stock_status      = isset($fields['stock_status']) ? sanitize_text_field($fields['stock_status']) : '';
     $stock_quantity    = isset($fields['stock_quantity']) ? intval($fields['stock_quantity']) : '';
     $tags              = isset($fields['tags']) && is_array($fields['tags']) ? array_map('sanitize_text_field', $fields['tags']) : array();
+    $categories        = isset($fields['categories']) && is_array($fields['categories']) ? array_map('sanitize_text_field', $fields['categories']) : array();
     $featured_image    = isset($fields['featured_image']) ? sanitize_url($fields['featured_image']) : '';
     $images            = isset($fields['images']) && is_array($fields['images']) ? array_map('sanitize_url', $fields['images']) : array();
     $yoast             = isset($fields['yoast']) ? $fields['yoast'] : '';
@@ -539,6 +571,14 @@ class Content_API
       $product->set_sale_price($sale_price);
     }
 
+    if ($map_price) {
+      $product->update_meta_data('_map_price', $map_price);
+    }
+
+    if ($cost) {
+      $product->update_meta_data('_cost', $cost);
+    }
+
     if ($sku) {
       $product->set_sku($sku);
     }
@@ -548,11 +588,16 @@ class Content_API
     }
 
     if ($stock_quantity) {
+      $product->set_manage_stock(true);
       $product->set_stock_quantity($stock_quantity);
     }
 
     if ($tags) {
       wp_set_object_terms($product_id, $tags, 'product_tag');
+    }
+
+    if ($categories) {
+      wp_set_object_terms($product_id, $categories, 'product_cat');
     }
 
     // Handle featured image
@@ -629,6 +674,193 @@ class Content_API
       'success' => true,
       'product_id' => $product_id,
       'message' => 'Product updated successfully'
+    ), 200);
+  }
+  
+  /**
+   * Create product
+   *
+   * @param  mixed $request
+   * @return void
+   */
+  public function create_product(WP_REST_Request $request) {
+    $this->options = get_option('content_api_options_polyplugins');
+    
+    $fields            = $request->get_json_params();
+    $name              = isset($fields['name']) ? sanitize_text_field($fields['name']) : '';
+    $status            = isset($fields['status']) ? sanitize_text_field($fields['status']) : 'draft';
+    $slug              = isset($fields['slug']) ? sanitize_title($fields['slug']) : '';
+    $description       = isset($fields['description']) ? wp_kses_post($fields['description']) : '';
+    $short_description = isset($fields['short_description']) ? wp_kses_post($fields['short_description']) : '';
+    $price             = isset($fields['price']) ? floatval($fields['price']) : '';
+    $sale_price        = isset($fields['sale_price']) ? floatval($fields['sale_price']) : '';
+    $map_price         = isset($fields['map_price']) ? floatval($fields['map_price']) : '';
+    $cost              = isset($fields['cost']) ? floatval($fields['cost']) : '';
+    $sku               = isset($fields['sku']) ? sanitize_text_field($fields['sku']) : '';
+    $stock_status      = isset($fields['stock_status']) ? sanitize_text_field($fields['stock_status']) : '';
+    $stock_quantity    = isset($fields['stock_quantity']) ? intval($fields['stock_quantity']) : '';
+    $tags              = isset($fields['tags']) && is_array($fields['tags']) ? array_map('sanitize_text_field', $fields['tags']) : array();
+    $categories        = isset($fields['categories']) && is_array($fields['categories']) ? array_map('sanitize_text_field', $fields['categories']) : array();
+    $featured_image    = isset($fields['featured_image']) ? sanitize_url($fields['featured_image']) : '';
+    $images            = isset($fields['images']) && is_array($fields['images']) ? array_map('sanitize_url', $fields['images']) : array();
+    $yoast             = isset($fields['yoast']) ? $fields['yoast'] : '';
+
+    if ($sku) {
+      if ($sku !== sanitize_text_field($sku)) {
+        return new WP_Error('sku_invalid', 'SKU is invalid', array('status' => 400));
+      }
+    }
+
+    if ($sku) {
+      $product_id_by_sku = wc_get_product_id_by_sku($sku);
+
+      if ($product_id_by_sku) {
+        return new WP_Error('product_sku_exists', 'Product with provided SKU already exists', array('status' => 404));
+      }
+    }
+
+    if ($slug) {
+      // Check if slug already exists for a different product
+      if (wc_get_product_id_by_sku($sku)) {
+        return new WP_Error('slug_exists', 'Slug already in use by another product', array('status' => 400));
+      }
+    }
+
+    $product = new WC_Product_Simple();
+
+    if ($name) {
+      $product->set_name($name);
+    }
+
+    if ($status) {
+      $product->set_status($status);
+    }
+
+    if ($slug) {
+      $product->set_slug($slug);
+    }
+
+    if ($description) {
+      $product->set_description($description);
+    }
+
+    if ($short_description) {
+      $product->set_short_description($short_description);
+    }
+
+    if ($price) {
+      $product->set_regular_price($price);
+    }
+
+    if ($sale_price) {
+      $product->set_sale_price($sale_price);
+    }
+
+    if ($map_price) {
+      $product->update_meta_data('_map_price', $map_price);
+    }
+
+    if ($cost) {
+      $product->update_meta_data('_cost', $cost);
+    }
+
+    if ($sku) {
+      $product->set_sku($sku);
+    }
+
+    if ($stock_status) {
+      $product->set_stock_status($stock_status);
+    }
+
+    if ($stock_quantity) {
+      $product->set_manage_stock(true);
+      $product->set_stock_quantity($stock_quantity);
+    }
+
+    // Assign Yoast Meta Title
+    if (isset($yoast['title'])) {
+      $product->update_meta_data('_yoast_wpseo_title', sanitize_text_field($yoast['title']));
+    }
+
+    // Assign Yoast Meta Description
+    if (isset($yoast['description'])) {
+      $product->update_meta_data('_yoast_wpseo_metadesc', sanitize_text_field($yoast['description']));
+    }
+
+    // Assign Yoast Facebook Open Graph Title
+    if (isset($yoast['premium']['social_appearance']['title'])) {
+      $product->update_meta_data('_yoast_wpseo_opengraph-title', sanitize_text_field($yoast['premium']['social_appearance']['title']));
+    }
+
+    // Assign Yoast Facebook Open Graph Description
+    if (isset($yoast['premium']['social_appearance']['description'])) {
+      $product->update_meta_data('_yoast_wpseo_opengraph-description', sanitize_text_field($yoast['premium']['social_appearance']['description']));
+    }
+
+    // Assign Yoast Facebook Open Graph Image
+    if (isset($yoast['premium']['social_appearance']['image'])) {
+      $product->update_meta_data('_yoast_wpseo_opengraph-image', sanitize_url($yoast['premium']['social_appearance']['image']));
+    }
+
+    // Assign Yoast Facebook Open Graph Title
+    if (isset($yoast['premium']['x']['title'])) {
+      $product->update_meta_data('_yoast_wpseo_twitter-title', sanitize_text_field($yoast['premium']['x']['title']));
+    }
+
+    // Assign Yoast Facebook Open Graph Description
+    if (isset($yoast['premium']['x']['description'])) {
+      $product->update_meta_data('_yoast_wpseo_twitter-description', sanitize_text_field($yoast['premium']['x']['description']));
+    }
+
+    // Assign Yoast Facebook Open Graph Image
+    if (isset($yoast['premium']['x']['image'])) {
+      $product->update_meta_data('_yoast_wpseo_twitter-image', sanitize_url($yoast['premium']['x']['image']));
+    }
+
+    // Save the product
+    $product_id = $product->save();
+
+    if ($tags) {
+      wp_set_object_terms($product_id, $tags, 'product_tag');
+    }
+
+    if ($categories) {
+      wp_set_object_terms($product_id, $categories, 'product_cat');
+    }
+
+    // Handle featured image
+    if ($featured_image) {
+      $image_id = $this->upload_image_to_media_library($featured_image, $product_id);
+
+      if ($image_id && !is_wp_error($image_id)) {
+        $product->set_image_id($image_id);
+      }
+    }
+
+    // Handle gallery images
+    if ($images) {
+      $image_ids = array();
+      foreach ($images as $image_url) {
+        $image_id = $this->upload_image_to_media_library($image_url, $product_id);
+        if ($image_id && !is_wp_error($image_id)) {
+          $image_ids[] = $image_id;
+        }
+      }
+
+      $product->set_gallery_image_ids($image_ids);
+    }
+
+    $product->save();
+
+    if (!$product_id) {
+      return new WP_Error('creation_failed', 'Failed to create product', array('status' => 500));
+    }
+
+    // Return success response
+    return new WP_REST_Response(array(
+      'success' => true,
+      'product_id' => $product_id,
+      'message' => 'Product created successfully'
     ), 200);
   }
   
