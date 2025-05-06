@@ -65,6 +65,15 @@ Yes, the plugin supports uploading images to the WordPress media library via the
 
 ## Changelog
 
+### 1.0.3
+
+* Added: [Get Product Category](https://www.polyplugins.com/docs/content-api/api/get-product-category/) endpoint
+* Added: [Update Product Category](https://www.polyplugins.com/docs/content-api/api/update-product-category/) endpoint
+* Added: [Create Product Category](https://www.polyplugins.com/docs/content-api/api/create-product-category/) endpoint
+* Updated: [Get Brand](https://www.polyplugins.com/docs/content-api/api/get-brand/) endpoint (Previous endpoint is an alias)
+* Updated: [Update Brand](https://www.polyplugins.com/docs/content-api/api/update-brand/) endpoint (Previous endpoint is an alias)
+* Updated: [Create Brand](https://www.polyplugins.com/docs/content-api/api/create-brand/) endpoint (Previous endpoint is an alias)
+
 ### 1.0.2
 
 * Added: [Get Brand](https://www.polyplugins.com/docs/content-api/api/get-brand/) endpoint
