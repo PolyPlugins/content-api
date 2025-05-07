@@ -4,7 +4,7 @@
  * Plugin Name: Content API
  * Plugin URI: https://www.polyplugins.com/contact/
  * Description: Adds various endpoints to create content
- * Version: 1.0.4
+ * Version: 1.0.5
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Poly Plugins
@@ -480,6 +480,7 @@ class Content_API
     $fields            = $request->get_json_params();
     $product_id        = isset($fields['product_id']) ? absint($fields['product_id']) : 0;
     $name              = isset($fields['name']) ? sanitize_text_field($fields['name']) : '';
+    $status            = isset($fields['status']) ? sanitize_text_field($fields['status']) : '';
     $slug              = isset($fields['slug']) ? sanitize_title($fields['slug']) : '';
     $description       = isset($fields['description']) ? wp_kses_post($fields['description']) : '';
     $short_description = isset($fields['short_description']) ? wp_kses_post($fields['short_description']) : '';
@@ -549,6 +550,10 @@ class Content_API
     // Update product fields if provided
     if ($name) {
       $product->set_name($name);
+    }
+
+    if ($status) {
+      $product->set_status($status);
     }
 
     if ($slug) {
