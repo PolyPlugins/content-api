@@ -4,7 +4,7 @@
  * Plugin Name: Content API
  * Plugin URI: https://www.polyplugins.com/contact/
  * Description: Adds various endpoints to create content
- * Version: 1.0.5
+ * Version: 1.0.6
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Poly Plugins
@@ -423,6 +423,7 @@ class Content_API
     $map_price         = $product->get_meta('_map_price');
     $cost              = $product->get_meta('_cost');
     $sku               = $product->get_sku();
+    $upc               = $product->get_meta('_global_unique_id');
     $stock_status      = $product->get_stock_status();
     $stock_quantity    = $product->get_stock_quantity();
     $tags              = wp_get_post_terms($product->get_id(), 'product_tag', array('fields' => 'names'));
@@ -457,6 +458,7 @@ class Content_API
       'map_price'         => $map_price ? floatval($map_price) : '',
       'cost'              => $cost ? floatval($cost) : '',
       'sku'               => $sku ? sanitize_text_field($sku) : '',
+      'upc'               => $upc ? sanitize_text_field($upc) : '',
       'stock_status'      => $stock_status ? sanitize_text_field($product->get_stock_status()) : '',
       'stock_quantity'    => $stock_quantity ? absint($product->get_stock_quantity()) : 0,
       'tags'              => $tags ? array_map('sanitize_text_field', $tags) : array(),
@@ -489,6 +491,7 @@ class Content_API
     $map_price         = isset($fields['map_price']) ? floatval($fields['map_price']) : '';
     $cost              = isset($fields['cost']) ? floatval($fields['cost']) : '';
     $sku               = isset($fields['sku']) ? sanitize_text_field($fields['sku']) : '';
+    $upc               = isset($fields['upc']) ? sanitize_text_field($fields['upc']) : '';
     $stock_status      = isset($fields['stock_status']) ? sanitize_text_field($fields['stock_status']) : '';
     $stock_quantity    = isset($fields['stock_quantity']) ? intval($fields['stock_quantity']) : '';
     $tags              = isset($fields['tags']) && is_array($fields['tags']) ? array_map('sanitize_text_field', $fields['tags']) : array();
@@ -586,6 +589,14 @@ class Content_API
 
     if ($sku) {
       $product->set_sku($sku);
+    }
+
+    if ($upc) {
+      if (!preg_match('/^[0-9\-]+$/', $upc)) {
+        return new WP_Error('upc_malformed', 'UPC must contain only numbers and hyphens', array('status' => 500));
+      }
+
+      $product->update_meta_data('_global_unique_id', $upc);
     }
 
     if ($stock_status) {
@@ -702,6 +713,7 @@ class Content_API
     $map_price         = isset($fields['map_price']) ? floatval($fields['map_price']) : '';
     $cost              = isset($fields['cost']) ? floatval($fields['cost']) : '';
     $sku               = isset($fields['sku']) ? sanitize_text_field($fields['sku']) : '';
+    $upc               = isset($fields['upc']) ? sanitize_text_field($fields['upc']) : '';
     $stock_status      = isset($fields['stock_status']) ? sanitize_text_field($fields['stock_status']) : '';
     $stock_quantity    = isset($fields['stock_quantity']) ? intval($fields['stock_quantity']) : '';
     $tags              = isset($fields['tags']) && is_array($fields['tags']) ? array_map('sanitize_text_field', $fields['tags']) : array();
@@ -771,6 +783,14 @@ class Content_API
 
     if ($sku) {
       $product->set_sku($sku);
+    }
+
+    if ($upc) {
+      if (!preg_match('/^[0-9\-]+$/', $upc)) {
+        return new WP_Error('upc_malformed', 'UPC must contain only numbers and hyphens', array('status' => 500));
+      }
+
+      $product->update_meta_data('_global_unique_id', $upc);
     }
 
     if ($stock_status) {
