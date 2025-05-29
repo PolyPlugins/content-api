@@ -65,6 +65,14 @@ Yes, the plugin supports uploading images to the WordPress media library via the
 
 ## Changelog
 
+### 1.0.7
+* Added: weight attribute to results of [Get Product](https://www.polyplugins.com/docs/content-api/api/get-product/) endpoint
+* Added: weight attribute to [Update Product](https://www.polyplugins.com/docs/content-api/api/update-product/) endpoint
+* Added: weight attribute to [Create Product](https://www.polyplugins.com/docs/content-api/api/create-product/) endpoint
+* Added: Option to show a notice on when the Content API was last accessed
+* Added: Option to show an error if the Content API has not been accessed in the last X amount of minutes
+* Bugfix: If stock passed as 0 it doesn't update
+
 ### 1.0.6
 * Added: upc attribute to results of [Get Product](https://www.polyplugins.com/docs/content-api/api/get-product/) endpoint
 * Added: upc attribute to [Update Product](https://www.polyplugins.com/docs/content-api/api/update-product/) endpoint
