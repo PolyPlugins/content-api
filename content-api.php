@@ -4,7 +4,7 @@
  * Plugin Name: Content API
  * Plugin URI: https://www.polyplugins.com/contact/
  * Description: Adds various endpoints to create content
- * Version: 1.0.6
+ * Version: 1.0.7
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Poly Plugins
@@ -37,6 +37,7 @@ class Content_API
     add_action('rest_api_init', array($this, 'register_endpoints'));
     add_action('admin_menu', array($this, 'register_settings_page'));
 		add_action('admin_init', array($this, 'settings_page_init'));
+    add_action('admin_notices', array($this, 'maybe_display_last_accessed_notice'));
   }
   
   /**
@@ -424,6 +425,7 @@ class Content_API
     $cost              = $product->get_meta('_cost');
     $sku               = $product->get_sku();
     $upc               = $product->get_meta('_global_unique_id');
+    $weight            = $product->get_weight();
     $stock_status      = $product->get_stock_status();
     $stock_quantity    = $product->get_stock_quantity();
     $tags              = wp_get_post_terms($product->get_id(), 'product_tag', array('fields' => 'names'));
@@ -459,6 +461,7 @@ class Content_API
       'cost'              => $cost ? floatval($cost) : '',
       'sku'               => $sku ? sanitize_text_field($sku) : '',
       'upc'               => $upc ? sanitize_text_field($upc) : '',
+      'weight'            => $weight ? floatval($weight) : '',
       'stock_status'      => $stock_status ? sanitize_text_field($product->get_stock_status()) : '',
       'stock_quantity'    => $stock_quantity ? absint($product->get_stock_quantity()) : 0,
       'tags'              => $tags ? array_map('sanitize_text_field', $tags) : array(),
@@ -492,6 +495,7 @@ class Content_API
     $cost              = isset($fields['cost']) ? floatval($fields['cost']) : '';
     $sku               = isset($fields['sku']) ? sanitize_text_field($fields['sku']) : '';
     $upc               = isset($fields['upc']) ? sanitize_text_field($fields['upc']) : '';
+    $weight            = isset($fields['weight']) ? floatval($fields['weight']) : '';
     $stock_status      = isset($fields['stock_status']) ? sanitize_text_field($fields['stock_status']) : '';
     $stock_quantity    = isset($fields['stock_quantity']) ? intval($fields['stock_quantity']) : '';
     $tags              = isset($fields['tags']) && is_array($fields['tags']) ? array_map('sanitize_text_field', $fields['tags']) : array();
@@ -599,11 +603,15 @@ class Content_API
       $product->update_meta_data('_global_unique_id', $upc);
     }
 
+    if ($weight) {
+      $product->set_weight($weight);
+    }
+
     if ($stock_status) {
       $product->set_stock_status($stock_status);
     }
 
-    if ($stock_quantity) {
+    if ($stock_quantity >= 0) {
       $product->set_manage_stock(true);
       $product->set_stock_quantity($stock_quantity);
     }
@@ -714,6 +722,7 @@ class Content_API
     $cost              = isset($fields['cost']) ? floatval($fields['cost']) : '';
     $sku               = isset($fields['sku']) ? sanitize_text_field($fields['sku']) : '';
     $upc               = isset($fields['upc']) ? sanitize_text_field($fields['upc']) : '';
+    $weight            = isset($fields['weight']) ? floatval($fields['weight']) : '';
     $stock_status      = isset($fields['stock_status']) ? sanitize_text_field($fields['stock_status']) : '';
     $stock_quantity    = isset($fields['stock_quantity']) ? intval($fields['stock_quantity']) : '';
     $tags              = isset($fields['tags']) && is_array($fields['tags']) ? array_map('sanitize_text_field', $fields['tags']) : array();
@@ -793,11 +802,15 @@ class Content_API
       $product->update_meta_data('_global_unique_id', $upc);
     }
 
+    if ($weight) {
+      $product->set_weight($weight);
+    }
+
     if ($stock_status) {
       $product->set_stock_status($stock_status);
     }
 
-    if ($stock_quantity) {
+    if ($stock_quantity >= 0) {
       $product->set_manage_stock(true);
       $product->set_stock_quantity($stock_quantity);
     }
@@ -2236,8 +2249,24 @@ class Content_API
 			'token',                        // id
 			'Token',                        // title
 			array($this, 'token_callback'), // callback
-			'content-api-settings',     // page
+			'content-api-settings',         // page
 			'setting_section'               // section
+		);
+
+		add_settings_field(
+			'last_accessed_enabled',
+			'Last Accessed Notice',
+			array($this, 'last_accessed_enabled_callback'),
+			'content-api-settings',
+			'setting_section'
+		);
+
+		add_settings_field(
+			'last_accessed_error_time',
+			'Last Accessed Error Time',
+			array($this, 'last_accessed_error_time_callback'),
+			'content-api-settings',
+			'setting_section'
 		);
 	}
   
@@ -2247,10 +2276,36 @@ class Content_API
    * @return void
    */
   public function token_callback() {
-		printf(
-			'<input class="regular-text" type="password" name="content_api_options_polyplugins[token]" id="token" value="%s">',
-			isset($this->options['token']) ? esc_attr($this->options['token']) : ''
-		);
+    $option = isset($this->options['token']) ? sanitize_text_field($this->options['token']) : '';
+    ?>
+		<input class="regular-text" type="password" name="content_api_options_polyplugins[token]" id="token" value="<?php echo esc_html($option); ?>">
+    <?php
+	}
+  
+  /**
+   * Last Accessed Enabled callback
+   *
+   * @return void
+   */
+  public function last_accessed_enabled_callback() {
+    $option = isset($this->options['last_accessed_enabled']) ? sanitize_text_field($this->options['last_accessed_enabled']) : '';
+		?>
+    <input type="checkbox" name="content_api_options_polyplugins[last_accessed_enabled]" id="last_accessed_enabled" <?php esc_attr(checked(1, $option, true)); ?> /> <?php echo esc_html__('Yes', 'content-api'); ?>
+    <p>This logs when the API was last accessed and displays a notice in the admin when it was last accessed.</p>
+    <?php
+	}
+  
+  /**
+   * Last Accessed Error Time callback
+   *
+   * @return void
+   */
+  public function last_accessed_error_time_callback() {
+    $option = isset($this->options['last_accessed_error_time']) ? sanitize_text_field($this->options['last_accessed_error_time']) : '';
+    ?>
+		<input class="regular-text" type="number" name="content_api_options_polyplugins[last_accessed_error_time]" id="last_accessed_error_time" value="<?php echo esc_html($option); ?>">
+    <p>Enter the number of minutes that the notice for last accessed should be turned red.</p>
+    <?php
 	}
 
   /**
@@ -2266,7 +2321,56 @@ class Content_API
       $sanitary_values['token'] = sanitize_text_field($input['token']);
     }
 
+    if (isset($input['last_accessed_enabled']) && $input['last_accessed_enabled']) {
+      $sanitary_values['last_accessed_enabled'] = $input['last_accessed_enabled'] === 'on' ? true : false;
+    } else {
+      $sanitary_values['last_accessed_enabled'] = false;
+    }
+
+    if (isset($input['last_accessed_error_time']) && $input['last_accessed_error_time']) {
+      $sanitary_values['last_accessed_error_time'] = intval($input['last_accessed_error_time']);
+    }
+
     return $sanitary_values;
+  }
+
+  /**
+   * Maybe display last access notice
+   *
+   * @param  mixed $request
+   * @return true|WP_Error True if granted, error if not
+   */
+  public function maybe_display_last_accessed_notice() {
+    $this->options = get_option('content_api_options_polyplugins');
+
+    if (!$this->options['last_accessed_enabled']) {
+      return;
+    }
+
+    $get_last_accessed = get_option('content_api_last_accessed_polyplugins');
+
+    if (!$get_last_accessed) {
+      return;
+    }
+
+    $last_accessed             = intval($get_last_accessed);
+    $now                       = time();
+    $threshold                 = isset($this->options['last_accessed_error_time']) ? intval($this->options['last_accessed_error_time']) : 0;
+    $seconds_since_last_access = ($now - $last_accessed) / 60;
+    $is_error                  = $threshold && $seconds_since_last_access > $threshold;
+    $notice_class              = $is_error ? 'notice-error' : 'notice-success';
+    $formatted_time            = wp_date(get_option('date_format') . ' ' . get_option('time_format'), $last_accessed);
+    ?>
+    <?php if (!$is_error) : ?>
+      <div class="notice <?php echo esc_attr($notice_class); ?>">
+        <p>Content API Last Accessed: <strong><?php echo esc_html($formatted_time); ?></strong></p>
+      </div>
+    <?php else : ?>
+      <div class="notice <?php echo esc_attr($notice_class); ?>" style="background-color: #D63638; color: #fff;">
+        <p>Content API Last Accessed: <strong><?php echo esc_html($formatted_time); ?></strong></p>
+      </div>
+    <?php endif; ?>
+    <?php
   }
   
   /**
@@ -2282,6 +2386,10 @@ class Content_API
     
     if ($request_token !== $token) {
       return new WP_Error('not_authorized', "Not Authorized", array('status' => 401));
+    }
+
+    if ($this->options['last_accessed_enabled']) {
+      update_option('content_api_last_accessed_polyplugins', time());
     }
     
     return true;
