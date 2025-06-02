@@ -65,6 +65,9 @@ Yes, the plugin supports uploading images to the WordPress media library via the
 
 ## Changelog
 
+### 1.0.8
+* Updated: [Update Product](https://www.polyplugins.com/docs/content-api/api/update-product/) endpoint to handle updating sku when product id is provided.
+
 ### 1.0.7
 * Added: weight attribute to results of [Get Product](https://www.polyplugins.com/docs/content-api/api/get-product/) endpoint
 * Added: weight attribute to [Update Product](https://www.polyplugins.com/docs/content-api/api/update-product/) endpoint
