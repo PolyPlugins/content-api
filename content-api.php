@@ -497,7 +497,7 @@ class Content_API
     $upc               = isset($fields['upc']) ? sanitize_text_field($fields['upc']) : '';
     $weight            = isset($fields['weight']) ? floatval($fields['weight']) : '';
     $stock_status      = isset($fields['stock_status']) ? sanitize_text_field($fields['stock_status']) : '';
-    $stock_quantity    = isset($fields['stock_quantity']) ? intval($fields['stock_quantity']) : '';
+    $manage_stock      = isset($fields['manage_stock']) ? sanitize_text_field($fields['manage_stock']) : '';
     $tags              = isset($fields['tags']) && is_array($fields['tags']) ? array_map('sanitize_text_field', $fields['tags']) : array();
     $categories        = isset($fields['categories']) && is_array($fields['categories']) ? array_map('sanitize_text_field', $fields['categories']) : array();
     $featured_image    = isset($fields['featured_image']) ? sanitize_url($fields['featured_image']) : '';
@@ -536,6 +536,8 @@ class Content_API
     if (!isset($product) || !$product) {
       return new WP_Error('product_not_found', 'Product not found', array('status' => 404));
     }
+
+    $stock_quantity = isset($fields['stock_quantity']) ? intval($fields['stock_quantity']) : false;
 
     if ($slug) {
       // Check if slug is empty after sanitization
@@ -607,7 +609,13 @@ class Content_API
       $product->set_stock_status($stock_status);
     }
 
-    if ($stock_quantity >= 0) {
+    if ($manage_stock == 'true') {
+      $product->set_manage_stock(true);
+    } elseif ($manage_stock == 'false') {
+      $product->set_manage_stock(false);
+    }
+
+    if ($stock_quantity >= 0 && $stock_quantity !== false) {
       $product->set_manage_stock(true);
       $product->set_stock_quantity($stock_quantity);
     }
