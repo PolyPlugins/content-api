@@ -65,6 +65,17 @@ Yes, the plugin supports uploading images to the WordPress media library via the
 
 ## Changelog
 
+### 1.0.11
+* Updated: [Get Product](https://www.polyplugins.com/docs/content-api/api/get-product/) manage_stock attribute to return a bool
+* Updated: [Update Product](https://www.polyplugins.com/docs/content-api/api/update-product/) manage_stock attribute to be able to use bool
+* Updated: [Create Product](https://www.polyplugins.com/docs/content-api/api/create-product/) manage_stock attribute to be able to use bool
+* Bugfix: [Update Product](https://www.polyplugins.com/docs/content-api/api/update-product/) attributes attribute not creating product attributes when they don't exist.
+* Bugfix: [Create Product](https://www.polyplugins.com/docs/content-api/api/create-product/) attributes attribute not creating product attributes when they don't exist.
+* Bugfix: [Update Product](https://www.polyplugins.com/docs/content-api/api/update-product/) triggering error sku during slug check
+* Bugfix: [Create Product](https://www.polyplugins.com/docs/content-api/api/create-product/) triggering error sku during slug check
+* Bugfix: [Update Product](https://www.polyplugins.com/docs/content-api/api/update-product/) triggering Exception instead of WP Error when upc attribute is already in use
+* Bugfix: [Create Product](https://www.polyplugins.com/docs/content-api/api/create-product/) triggering Exception instead of WP Error when upc attribute is already in use
+
 ### 1.0.10
 * Updated: [Create Product](https://www.polyplugins.com/docs/content-api/api/create-product/) endpoint to not require quantity
 
