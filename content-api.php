@@ -88,6 +88,12 @@ class Content_API
       'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
     ));
 
+    register_rest_route('content-api/v1', '/product-ids/', array(
+      'methods' => 'GET',
+      'callback' => array($this, 'get_all_product_ids'),
+      'permission_callback' => array($this, 'has_permission'), // Add your permission callback for security
+    ));
+
     register_rest_route('content-api/v1', '/product-categories/', array(
       'methods' => 'GET',
       'callback' => array($this, 'get_all_product_categories'),
@@ -345,11 +351,13 @@ class Content_API
    */
   public function get_product(WP_REST_Request $request) {
     $this->options = get_option('content_api_options_polyplugins');
+
     
-    $product_id                = $request->get_param('product_id');
-    $sku                       = $request->get_param('sku');
-    $missing_description       = $request->get_param('missing_description') ? true : false;
-    $missing_description_limit = $request->get_param('missing_description_limit') ? absint($request->get_param('missing_description_limit')) : 100;
+    $fields                    = $request->get_params();
+    $product_id                = isset($fields['product_id']) && is_numeric($fields['product_id']) ? absint($fields['product_id']) : '';
+    $sku                       = isset($fields['sku']) ? sanitize_text_field($fields['sku']) : '';
+    $missing_description       = isset($fields['missing_description']) ? true : false;
+    $missing_description_limit = isset($fields['missing_description_limit']) ? absint($fields['missing_description_limit']) : 100;
 
     if ($missing_description) {
 
@@ -367,7 +375,7 @@ class Content_API
         if (!empty($sku)) {
           $products[] = array(
             'product_id' => $product_id,
-            'sku'        => $sku
+            'sku'        => sanitize_text_field($sku)
           );
         }
       }
@@ -948,6 +956,36 @@ class Content_API
       'success' => true,
       'product_id' => $product_id,
       'message' => 'Product created successfully'
+    ), 200);
+  }
+  
+  /**
+   * Get all product categories
+   *
+   * @param  mixed $request
+   * @return void
+   */
+  public function get_all_product_ids(WP_REST_Request $request) {
+    $this->options = get_option('content_api_options_polyplugins');
+    
+    $fields = $request->get_params();
+    $limit  = isset($fields['limit']) && is_numeric($fields['limit']) ? intval($fields['limit']) : -1;
+    $status = isset($fields['status']) ? sanitize_text_field($fields['status']) : '';
+
+    $args = array(
+      'limit'  => $limit,
+      'return' => 'ids'
+    );
+
+    if ($status) {
+      $args['status'] = $status;
+    }
+    
+    $products_ids = wc_get_products($args);
+
+    return new WP_REST_Response(array(
+      'success'     => true,
+      'product_ids' => $products_ids
     ), 200);
   }
   
@@ -1954,8 +1992,9 @@ class Content_API
   {
     $this->options = get_option('content_api_options_polyplugins');
     
-    $product_id = $request->get_param('product_id');
-    $sku        = $request->get_param('sku');
+    $fields     = $request->get_params();
+    $product_id = isset($fields['product_id']) && is_numeric($fields['product_id']) ? absint($fields['product_id']) : '';
+    $sku        = isset($fields['sku']) ? sanitize_text_field($fields['sku']) : '';
 
     if (!$product_id && !$sku) {
       return new WP_Error('missing_identifier', 'Product ID or SKU is required', array('status' => 400));
