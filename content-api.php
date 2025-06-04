@@ -404,8 +404,7 @@ class Content_API
       } else {
         return new WP_Error('product_not_found', 'Product not found with provided SKU', array('status' => 404));
       }
-    }
-    elseif ($product_id) {
+    } elseif ($product_id) {
       $product = wc_get_product($product_id);
     }
     
@@ -416,6 +415,7 @@ class Content_API
     // Prepare product data response
     $product_id        = $product->get_id();
     $name              = $product->get_name();
+    $status            = $product->get_status();
     $slug              = $product->get_slug();
     $description       = $product->get_description();
     $short_description = $product->get_short_description();
@@ -427,12 +427,46 @@ class Content_API
     $upc               = $product->get_meta('_global_unique_id');
     $weight            = $product->get_weight();
     $stock_status      = $product->get_stock_status();
+    $manage_stock      = $product->get_manage_stock();
     $stock_quantity    = $product->get_stock_quantity();
     $tags              = wp_get_post_terms($product->get_id(), 'product_tag', array('fields' => 'names'));
     $categories        = wp_get_post_terms($product->get_id(), 'product_cat', array('fields' => 'names'));
+    $attributes   = array();
+    $raw_attributes    = $product->get_attributes();
+    $images            = array();
+    $gallery_ids       = $product->get_gallery_image_ids();
+    $yoast             = array(
+      "title"       => sanitize_text_field($product->get_meta('_yoast_wpseo_title')),
+      "description" => sanitize_text_field($product->get_meta('_yoast_wpseo_metadesc')),
+      "premium"     => array(
+        "social_appearance" => array(
+          "title"       => sanitize_text_field($product->get_meta('_yoast_wpseo_opengraph-title')),
+          "description" => sanitize_text_field($product->get_meta('_yoast_wpseo_opengraph-description')),
+          "image"       => sanitize_url($product->get_meta('_yoast_wpseo_opengraph-image')),
+        ),
+        "x" => array(
+          "title"       => sanitize_text_field($product->get_meta('_yoast_wpseo_twitter-title')),
+          "description" => sanitize_text_field($product->get_meta('_yoast_wpseo_twitter-description')),
+          "image"       => sanitize_url($product->get_meta('_yoast_wpseo_twitter-image')),
+        )
+      )
+    );
 
-    $images      = array();
-    $gallery_ids = $product->get_gallery_image_ids();
+    foreach ($raw_attributes as $raw_attribute) {
+      if ($raw_attribute->is_taxonomy()) {
+        $terms = wp_get_post_terms($product->get_id(), $raw_attribute->get_name(), array('fields' => 'names'));
+
+        $attributes[] = array(
+          'name'   => $raw_attribute->get_name(),
+          'value'  => $terms,
+        );
+      } else {
+        $attributes[] = array(
+          'name'   => $raw_attribute->get_name(),
+          'value'  => $raw_attribute->get_options(),
+        );
+      }
+    }
 
     foreach ($gallery_ids as $id) {
       $image = wp_get_attachment_image_src($id, 'full');
@@ -452,6 +486,7 @@ class Content_API
     $response_data     = array(
       'product_id'        => $product_id ? absint($product_id) : 0,
       'name'              => $name ? sanitize_text_field($name) : '',
+      'status'            => $status ? sanitize_text_field($status) : '',
       'slug'              => $slug ? sanitize_title($slug) : '',
       'description'       => $description ? wp_kses_post($description) : '',
       'short_description' => $short_description ? wp_kses_post($short_description) : '',
@@ -462,12 +497,15 @@ class Content_API
       'sku'               => $sku ? sanitize_text_field($sku) : '',
       'upc'               => $upc ? sanitize_text_field($upc) : '',
       'weight'            => $weight ? floatval($weight) : '',
-      'stock_status'      => $stock_status ? sanitize_text_field($product->get_stock_status()) : '',
+      'stock_status'      => $stock_status ? sanitize_text_field($stock_status) : '',
+      'manage_stock'      => $manage_stock ? sanitize_text_field($manage_stock) : '',
       'stock_quantity'    => $stock_quantity ? absint($product->get_stock_quantity()) : 0,
       'tags'              => $tags ? array_map('sanitize_text_field', $tags) : array(),
       'categories'        => $categories ? array_map('sanitize_text_field', $categories) : array(),
+      'attributes'        => $attributes,
       'images'            => $images ? array_map('esc_url_raw', $images) : array(),
       'featured_image'    => $featured_image ? esc_url_raw($featured_image) : '',
+      'yoast'             => $yoast,
     );
 
     return new WP_REST_Response($response_data, 200);
@@ -1873,11 +1911,21 @@ class Content_API
         $attributes = $product_obj->get_attributes();
 
         $formatted_attributes = array();
+
         foreach ($attributes as $attribute) {
-          $formatted_attributes[] = array(
-            'name'   => $attribute->get_name(),
-            'value'  => $attribute->get_options(),
-          );
+          if ($attribute->is_taxonomy()) {
+            $terms = wp_get_post_terms($product_id, $attribute->get_name(), array('fields' => 'names'));
+
+            $formatted_attributes[] = array(
+              'name'   => $attribute->get_name(),
+              'value'  => $terms,
+            );
+          } else {
+            $formatted_attributes[] = array(
+              'name'   => $attribute->get_name(),
+              'value'  => $attribute->get_options(),
+            );
+          }
         }
 
         $product_data[] = array(
