@@ -65,6 +65,17 @@ Yes, the plugin supports uploading images to the WordPress media library via the
 
 ## Changelog
 
+### 1.0.9
+* Added: [Get All Product IDs](https://www.polyplugins.com/docs/content-api/api/get-all-product-ids/) endpoint
+* Added: Attribute manage_stock to results of [Get Product](https://www.polyplugins.com/docs/content-api/api/get-product/) endpoint
+* Added: Attribute attributes to results of [Get Product](https://www.polyplugins.com/docs/content-api/api/get-product/) endpoint
+* Added: Attribute yoast to results of [Get Product](https://www.polyplugins.com/docs/content-api/api/get-product/) endpoint
+* Added: Attribute manage_stock to [Update Product](https://www.polyplugins.com/docs/content-api/api/update-product/) endpoint
+* Added: Attribute manage_stock to [Create Product](https://www.polyplugins.com/docs/content-api/api/create-product/) endpoint
+* Added: Security enhancements
+* Updated: [Update Product](https://www.polyplugins.com/docs/content-api/api/update-product/) endpoint to not require quantity
+* Bugfix: Taxonomy handling for [Get Attributes](https://www.polyplugins.com/docs/content-api/api/get-attributes/) endpoint
+
 ### 1.0.8
 * Updated: [Update Product](https://www.polyplugins.com/docs/content-api/api/update-product/) endpoint to handle updating sku when product id is provided.
 
