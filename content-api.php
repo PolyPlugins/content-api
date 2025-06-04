@@ -4,7 +4,7 @@
  * Plugin Name: Content API
  * Plugin URI: https://www.polyplugins.com/contact/
  * Description: Adds various endpoints to create content
- * Version: 1.0.10
+ * Version: 1.0.11
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Poly Plugins
@@ -15,6 +15,7 @@
 
 namespace PolyPlugins;
 
+use Exception;
 use WC_Product_Attribute;
 use WC_Product_Simple;
 use WP_Error;
@@ -506,7 +507,7 @@ class Content_API
       'upc'               => $upc ? sanitize_text_field($upc) : '',
       'weight'            => $weight ? floatval($weight) : '',
       'stock_status'      => $stock_status ? sanitize_text_field($stock_status) : '',
-      'manage_stock'      => $manage_stock ? sanitize_text_field($manage_stock) : '',
+      'manage_stock'      => $manage_stock ? true : false,
       'stock_quantity'    => $stock_quantity ? absint($product->get_stock_quantity()) : 0,
       'tags'              => $tags ? array_map('sanitize_text_field', $tags) : array(),
       'categories'        => $categories ? array_map('sanitize_text_field', $categories) : array(),
@@ -543,10 +544,11 @@ class Content_API
     $upc               = isset($fields['upc']) ? sanitize_text_field($fields['upc']) : '';
     $weight            = isset($fields['weight']) ? floatval($fields['weight']) : '';
     $stock_status      = isset($fields['stock_status']) ? sanitize_text_field($fields['stock_status']) : '';
-    $manage_stock      = isset($fields['manage_stock']) ? sanitize_text_field($fields['manage_stock']) : '';
+    $manage_stock      = isset($fields['manage_stock']) ? wc_string_to_bool($fields['manage_stock']) : null;
     $stock_quantity    = isset($fields['stock_quantity']) ? intval($fields['stock_quantity']) : false;
     $tags              = isset($fields['tags']) && is_array($fields['tags']) ? array_map('sanitize_text_field', $fields['tags']) : array();
     $categories        = isset($fields['categories']) && is_array($fields['categories']) ? array_map('sanitize_text_field', $fields['categories']) : array();
+    $attributes        = isset($fields['attributes']) ? $fields['attributes'] : array();
     $featured_image    = isset($fields['featured_image']) ? sanitize_url($fields['featured_image']) : '';
     $images            = isset($fields['images']) && is_array($fields['images']) ? array_map('sanitize_url', $fields['images']) : array();
     $yoast             = isset($fields['yoast']) ? $fields['yoast'] : '';
@@ -575,8 +577,7 @@ class Content_API
       } else {
         return new WP_Error('product_not_found', 'Product not found with provided SKU', array('status' => 404));
       }
-    } 
-    elseif ($product_id) {
+    } elseif ($product_id) {
       $product = wc_get_product($product_id);
     }
     
@@ -584,15 +585,19 @@ class Content_API
       return new WP_Error('product_not_found', 'Product not found', array('status' => 404));
     }
 
-    if ($slug) {
-      // Check if slug is empty after sanitization
-      if (empty($slug)) {
-        return new WP_Error('slug_invalid', 'Invalid slug format', array('status' => 400));
-      }
+    if ($sku) {
+      $product_id_by_sku = wc_get_product_id_by_sku($sku);
 
+      if ($product_id_by_sku != $product->get_id()) {
+        return new WP_Error('product_sku_exists', 'Product with provided SKU already exists', array('status' => 404));
+      }
+    }
+
+    if ($slug) {
       // Check if slug already exists for a different product
       $existing_product_id = get_page_by_path($slug, OBJECT, get_post_types());
-      if ($existing_product_id && (($product_id && $existing_product_id->ID != $product_id) || ($sku && $existing_product_id->ID != wc_get_product_id_by_sku($sku)))) {
+
+      if ($existing_product_id) {
         return new WP_Error('slug_exists', 'Slug already in use by another product', array('status' => 400));
       }
     }
@@ -643,7 +648,11 @@ class Content_API
         return new WP_Error('upc_malformed', 'UPC must contain only numbers and hyphens', array('status' => 500));
       }
 
-      $product->update_meta_data('_global_unique_id', $upc);
+      try {
+        $product->update_meta_data('_global_unique_id', $upc);
+      } catch (Exception $e) {
+        return new WP_Error('product_exception', 'An error occurred when attempting to update UPC. It may be in use, please check your trash.', array('status' => 500));
+      }
     }
 
     if ($weight) {
@@ -654,9 +663,9 @@ class Content_API
       $product->set_stock_status($stock_status);
     }
 
-    if ($manage_stock == 'true') {
+    if ($manage_stock === true) {
       $product->set_manage_stock(true);
-    } elseif ($manage_stock == 'false') {
+    } elseif ($manage_stock === false) {
       $product->set_manage_stock(false);
     }
 
@@ -671,6 +680,18 @@ class Content_API
 
     if ($categories) {
       wp_set_object_terms($product_id, $categories, 'product_cat');
+    }
+
+    if (!empty($attributes) && is_array($attributes)) {
+      $existing_attributes = $product->get_attributes();
+      $attributes          = $this->create_or_update_product_attributes($attributes, $existing_attributes);
+      
+      if (is_wp_error($attributes)) {
+        return $attributes;
+      }
+      
+      // Update product attributes
+      $product->set_attributes($attributes);
     }
 
     // Handle featured image
@@ -736,7 +757,11 @@ class Content_API
     }
 
     // Save the product
-    $product_id = $product->save();
+    try {
+      $product_id = $product->save();
+    } catch (Exception $e) {
+      return new WP_Error('product_exception', 'Error saving product. This typically happens if you are trying to create a new product with a SKU already in use, please check your trash.', array('status' => 500));
+    }
 
     if (!$product_id) {
       return new WP_Error('update_failed', 'Failed to update product', array('status' => 500));
@@ -773,10 +798,11 @@ class Content_API
     $upc               = isset($fields['upc']) ? sanitize_text_field($fields['upc']) : '';
     $weight            = isset($fields['weight']) ? floatval($fields['weight']) : '';
     $stock_status      = isset($fields['stock_status']) ? sanitize_text_field($fields['stock_status']) : '';
-    $manage_stock      = isset($fields['manage_stock']) ? sanitize_text_field($fields['manage_stock']) : '';
+    $manage_stock      = isset($fields['manage_stock']) ? wc_string_to_bool($fields['manage_stock']) : null;
     $stock_quantity    = isset($fields['stock_quantity']) ? intval($fields['stock_quantity']) : false;
     $tags              = isset($fields['tags']) && is_array($fields['tags']) ? array_map('sanitize_text_field', $fields['tags']) : array();
     $categories        = isset($fields['categories']) && is_array($fields['categories']) ? array_map('sanitize_text_field', $fields['categories']) : array();
+    $attributes        = isset($fields['attributes']) ? $fields['attributes'] : array();
     $featured_image    = isset($fields['featured_image']) ? sanitize_url($fields['featured_image']) : '';
     $images            = isset($fields['images']) && is_array($fields['images']) ? array_map('sanitize_url', $fields['images']) : array();
     $yoast             = isset($fields['yoast']) ? $fields['yoast'] : '';
@@ -797,7 +823,9 @@ class Content_API
 
     if ($slug) {
       // Check if slug already exists for a different product
-      if (wc_get_product_id_by_sku($sku)) {
+      $existing_product_id = get_page_by_path($slug, OBJECT, get_post_types());
+
+      if ($existing_product_id) {
         return new WP_Error('slug_exists', 'Slug already in use by another product', array('status' => 400));
       }
     }
@@ -849,7 +877,11 @@ class Content_API
         return new WP_Error('upc_malformed', 'UPC must contain only numbers and hyphens', array('status' => 500));
       }
 
-      $product->update_meta_data('_global_unique_id', $upc);
+      try {
+        $product->update_meta_data('_global_unique_id', $upc);
+      } catch (Exception $e) {
+        return new WP_Error('product_exception', 'An error occurred when attempting to update UPC. It may be in use, please check your trash.', array('status' => 500));
+      }
     }
 
     if ($weight) {
@@ -860,9 +892,9 @@ class Content_API
       $product->set_stock_status($stock_status);
     }
 
-    if ($manage_stock == 'true') {
+    if ($manage_stock === true) {
       $product->set_manage_stock(true);
-    } elseif ($manage_stock == 'false') {
+    } elseif ($manage_stock === false) {
       $product->set_manage_stock(false);
     }
 
@@ -912,7 +944,11 @@ class Content_API
     }
 
     // Save the product
-    $product_id = $product->save();
+    try {
+      $product_id = $product->save();
+    } catch (Exception $e) {
+      return new WP_Error('product_exception', 'Error saving product. This typically happens if you are trying to create a new product with a SKU already in use, please check your trash.', array('status' => 500));
+    }
 
     if ($tags) {
       wp_set_object_terms($product_id, $tags, 'product_tag');
@@ -920,6 +956,18 @@ class Content_API
 
     if ($categories) {
       wp_set_object_terms($product_id, $categories, 'product_cat');
+    }
+
+    if (!empty($attributes) && is_array($attributes)) {
+      $existing_attributes = $product->get_attributes();
+      $attributes          = $this->create_or_update_product_attributes($attributes, $existing_attributes);
+
+      if (is_wp_error($attributes)) {
+        return $attributes;
+      }
+
+      // Update product attributes
+      $product->set_attributes($attributes);
     }
 
     // Handle featured image
@@ -944,7 +992,11 @@ class Content_API
       $product->set_gallery_image_ids($image_ids);
     }
 
-    $product->save();
+    try {
+      $product->save();
+    } catch (Exception $e) {
+      return new WP_Error('product_exception', 'An error occurred when attempting to save the product.', array('status' => 500));
+    }
 
     if (!$product_id) {
       return new WP_Error('creation_failed', 'Failed to create product', array('status' => 500));
@@ -2140,7 +2192,12 @@ class Content_API
 
     // Update product attributes
     $product->set_attributes($existing_attributes);
-    $product->save();
+
+    try {
+      $product->save();
+    } catch (Exception $e) {
+      return new WP_Error('product_exception', 'An error occurred when attempting to save the product.', array('status' => 500));
+    }
 
     return new WP_REST_Response(array(
       'success'    => true,
@@ -2514,6 +2571,82 @@ class Content_API
 
     // Return false if there was an error
     return false;
+  }
+  
+  /**
+   * Create or update product attributes
+   *
+   * @param  array $attributes
+   * @param  array $existing_attributes
+   * @return void
+   */
+  private function create_or_update_product_attributes($attributes, $existing_attributes) {
+    // Loop through new attributes and update/add them
+    foreach ($attributes as $attribute) {
+      if (!isset($attribute['name']) || !isset($attribute['value'])) {
+        return new WP_Error('invalid_attribute', "Each attribute must include 'name' and 'value'", array('status' => 400));
+      }
+
+      $attr_name  = sanitize_text_field($attribute['name']);
+      $attr_slug  = sanitize_title($attribute['name']);
+      $attr_value = is_array($attribute['value']) ? array_map('sanitize_text_field', $attribute['value']) : array(sanitize_text_field($attribute['value']));
+      $taxonomy   = wc_attribute_taxonomy_name($attr_slug);
+
+      if (!taxonomy_exists($taxonomy)) {
+        $attribute_args = array(
+          'name' => $attr_name,
+          'slug' => $attr_slug,
+        );
+
+        $create_taxonomy = wc_create_attribute($attribute_args);
+        
+        register_taxonomy(
+          $taxonomy,
+          apply_filters('woocommerce_taxonomy_objects_' . $taxonomy, array('product')),
+          apply_filters('woocommerce_taxonomy_args_' . $taxonomy, array(
+              'labels'       => array(
+                'name' => $attr_name,
+              ),
+              'hierarchical' => true,
+              'show_ui'      => false,
+              'query_var'    => true,
+              'rewrite'      => false,
+            )
+          )
+        );
+      }
+
+      // Check if it's a global attribute (taxonomy-based)
+      if (taxonomy_exists($taxonomy)) {
+        // Ensure terms exist before assigning
+        $term_ids = array();
+
+        foreach ($attr_value as $term_name) {
+          $term = term_exists($term_name, $taxonomy);
+
+          if (!$term) {
+            $term = wp_insert_term($term_name, $taxonomy);
+          }
+
+          if (!is_wp_error($term)) {
+            $term_ids[] = (int) $term['term_id'];
+          }
+        }
+
+        // Set taxonomy-based attribute
+        $existing_attributes[$taxonomy] = new WC_Product_Attribute();
+        $existing_attributes[$taxonomy]->set_id(wc_attribute_taxonomy_id_by_name($attr_slug));
+        $existing_attributes[$taxonomy]->set_name($taxonomy);
+        $existing_attributes[$taxonomy]->set_options($term_ids);
+        $existing_attributes[$taxonomy]->set_position(0);
+        $existing_attributes[$taxonomy]->set_visible(true);
+        $existing_attributes[$taxonomy]->set_variation(false);
+      } else {
+        return new WP_Error('attribute_does_not_exist', "The attribute ". $attr_slug . " does not exist. Attempt to create failed.", array('status' => 400));
+      }
+    }
+
+    return $existing_attributes;
   }
   
   /**
