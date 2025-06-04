@@ -4,7 +4,7 @@
  * Plugin Name: Content API
  * Plugin URI: https://www.polyplugins.com/contact/
  * Description: Adds various endpoints to create content
- * Version: 1.0.9
+ * Version: 1.0.10
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Poly Plugins
@@ -544,6 +544,7 @@ class Content_API
     $weight            = isset($fields['weight']) ? floatval($fields['weight']) : '';
     $stock_status      = isset($fields['stock_status']) ? sanitize_text_field($fields['stock_status']) : '';
     $manage_stock      = isset($fields['manage_stock']) ? sanitize_text_field($fields['manage_stock']) : '';
+    $stock_quantity    = isset($fields['stock_quantity']) ? intval($fields['stock_quantity']) : false;
     $tags              = isset($fields['tags']) && is_array($fields['tags']) ? array_map('sanitize_text_field', $fields['tags']) : array();
     $categories        = isset($fields['categories']) && is_array($fields['categories']) ? array_map('sanitize_text_field', $fields['categories']) : array();
     $featured_image    = isset($fields['featured_image']) ? sanitize_url($fields['featured_image']) : '';
@@ -582,8 +583,6 @@ class Content_API
     if (!isset($product) || !$product) {
       return new WP_Error('product_not_found', 'Product not found', array('status' => 404));
     }
-    
-    $stock_quantity = isset($fields['stock_quantity']) ? intval($fields['stock_quantity']) : false;
 
     if ($slug) {
       // Check if slug is empty after sanitization
@@ -775,7 +774,7 @@ class Content_API
     $weight            = isset($fields['weight']) ? floatval($fields['weight']) : '';
     $stock_status      = isset($fields['stock_status']) ? sanitize_text_field($fields['stock_status']) : '';
     $manage_stock      = isset($fields['manage_stock']) ? sanitize_text_field($fields['manage_stock']) : '';
-    $stock_quantity    = isset($fields['stock_quantity']) ? intval($fields['stock_quantity']) : '';
+    $stock_quantity    = isset($fields['stock_quantity']) ? intval($fields['stock_quantity']) : false;
     $tags              = isset($fields['tags']) && is_array($fields['tags']) ? array_map('sanitize_text_field', $fields['tags']) : array();
     $categories        = isset($fields['categories']) && is_array($fields['categories']) ? array_map('sanitize_text_field', $fields['categories']) : array();
     $featured_image    = isset($fields['featured_image']) ? sanitize_url($fields['featured_image']) : '';

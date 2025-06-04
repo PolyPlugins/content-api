@@ -65,6 +65,9 @@ Yes, the plugin supports uploading images to the WordPress media library via the
 
 ## Changelog
 
+### 1.0.10
+* Updated: [Create Product](https://www.polyplugins.com/docs/content-api/api/create-product/) endpoint to not require quantity
+
 ### 1.0.9
 * Added: [Get All Product IDs](https://www.polyplugins.com/docs/content-api/api/get-all-product-ids/) endpoint
 * Added: Attribute manage_stock to results of [Get Product](https://www.polyplugins.com/docs/content-api/api/get-product/) endpoint
