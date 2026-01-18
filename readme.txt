@@ -2,7 +2,7 @@
 Contributors: polyplugins
 Tags: content api, rest api, content, creative, api
 Tested up to: 6.8
-Stable tag: 1.0.11
+Stable tag: 1.1.0
 Requires PHP: 7.4
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -83,6 +83,10 @@ Yes, the plugin supports uploading images to the WordPress media library via the
 
 
 == Changelog ==
+
+= 1.1.0 =
+* Added: Ability to schedule posts using publish_on for [Create Post](https://www.polyplugins.com/docs/content-api/api/create-post/)
+* Updated: [Create Post](https://www.polyplugins.com/docs/content-api/api/create-post/) to only require title, content, and categories
 
 = 1.0.11 =
 * Updated: [Get Product](https://www.polyplugins.com/docs/content-api/api/get-product/) manage_stock attribute to return a bool
