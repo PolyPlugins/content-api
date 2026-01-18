@@ -4,7 +4,7 @@
  * Plugin Name: Content API
  * Plugin URI: https://www.polyplugins.com/contact/
  * Description: Adds various endpoints to create content
- * Version: 1.0.11
+ * Version: 1.1.0
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Poly Plugins
@@ -204,7 +204,7 @@ class Content_API
     // Get the JSON data from the request
     $fields = $request->get_json_params();
 
-    if ($this->data_missing($fields)) {
+    if ($this->post_data_missing($fields)) {
       return new WP_Error('data_missing', $this->get_error(), array('status' => 400));
     }
 
@@ -216,15 +216,34 @@ class Content_API
     $tags           = isset($fields['tags']) ? array_map('sanitize_text_field', $fields['tags']) : '';
     $yoast          = isset($fields['yoast']) ? $fields['yoast'] : '';
     $post_type      = isset($fields['post_type']) ? sanitize_text_field($fields['post_type']) : 'post';
+    $publish_on     = isset($fields['publish_on']) ? sanitize_text_field($fields['publish_on']) : '';
+
+    if (!empty($publish_on)) {
+      $timestamp = strtotime($publish_on);
+
+      if ($timestamp !== false) {
+        $post_date = date('Y-m-d H:i:s', $timestamp);
+        $post_date_gmt = get_gmt_from_date($post_date);
+
+        if ($timestamp > current_time('timestamp')) {
+          $post_status = 'future';
+        }
+      }
+    }
 
     // Prepare the post array
     $post_data = array(
       'post_title'   => $title,
       'post_content' => $this->replace_image_variables($content, $images),
-      'post_status'  => 'draft',
+      'post_status'  => isset($post_status) ? 'future' : 'draft',
       'post_type'    => $post_type,
       'post_author'  => 1,
     );
+
+    if (isset($post_date) && !empty($post_date)) {
+      $post_data['post_date'] = $post_date;
+      $post_data['post_date_gmt'] = $post_date_gmt;
+    }
 
     // Insert the post into the database
     $post_id = wp_insert_post($post_data);
@@ -2714,6 +2733,32 @@ class Content_API
       $key = array_search("categories", $errors);
 
       unset($errors[$key]);
+    }
+
+    if (!empty($errors)) {
+      $this->error = 'Missing parameters: ' . implode(', ', $errors);
+
+      return true;
+    }
+
+    return false;
+  }
+    
+  /**
+   * Check if any data is missing from the create_post request
+   *
+   * @param  mixed $parameters
+   * @return bool
+   */
+  private function post_data_missing($parameters) {
+    $errors = array();
+
+    $post_required_fields = array('title', 'content', 'categories');
+
+    foreach ($post_required_fields as $field) {
+      if (empty($parameters[$field])) {
+        $errors[] = $field;
+      }
     }
 
     if (!empty($errors)) {

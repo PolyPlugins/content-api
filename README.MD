@@ -65,6 +65,11 @@ Yes, the plugin supports uploading images to the WordPress media library via the
 
 ## Changelog
 
+### 1.1.0
+* Added: Ability to schedule posts using publish_on for [Create Post](https://www.polyplugins.com/docs/content-api/api/create-post/)
+* Updated: [Create Post](https://www.polyplugins.com/docs/content-api/api/create-post/) to only require title, content, and categories, as yoast and tags aren't a requirement.
+
+
 ### 1.0.11
 * Updated: [Get Product](https://www.polyplugins.com/docs/content-api/api/get-product/) manage_stock attribute to return a bool
 * Updated: [Update Product](https://www.polyplugins.com/docs/content-api/api/update-product/) manage_stock attribute to be able to use bool
