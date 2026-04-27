@@ -4,7 +4,7 @@
  * Plugin Name: Content API
  * Plugin URI: https://www.polyplugins.com/contact/
  * Description: Adds various endpoints to create content
- * Version: 1.1.0
+ * Version: 1.1.1
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Poly Plugins
@@ -607,7 +607,7 @@ class Content_API
     if ($sku) {
       $product_id_by_sku = wc_get_product_id_by_sku($sku);
 
-      if ($product_id_by_sku != $product->get_id()) {
+      if ($product_id_by_sku && (int) $product_id_by_sku !== (int) $product->get_id()) {
         return new WP_Error('product_sku_exists', 'Product with provided SKU already exists', array('status' => 404));
       }
     }
