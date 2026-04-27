@@ -4,7 +4,7 @@
  * Plugin Name: Content API
  * Plugin URI: https://www.polyplugins.com/contact/
  * Description: Adds various endpoints to create content
- * Version: 1.1.1
+ * Version: 1.2.0
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Poly Plugins
@@ -21,6 +21,8 @@ use WC_Product_Simple;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
+
+if (!defined('ABSPATH')) exit;
 
 class Content_API
 {
@@ -39,6 +41,8 @@ class Content_API
     add_action('admin_menu', array($this, 'register_settings_page'));
 		add_action('admin_init', array($this, 'settings_page_init'));
     add_action('admin_notices', array($this, 'maybe_display_last_accessed_notice'));
+    add_action('wp_loaded', array($this, 'maybe_send_last_accessed_email_notification'));
+    add_action('wp_loaded', array($this, 'maybe_send_last_accessed_discord_notification'));
   }
   
   /**
@@ -222,7 +226,7 @@ class Content_API
       $timestamp = strtotime($publish_on);
 
       if ($timestamp !== false) {
-        $post_date = date('Y-m-d H:i:s', $timestamp);
+        $post_date = gmdate('Y-m-d H:i:s', $timestamp);
         $post_date_gmt = get_gmt_from_date($post_date);
 
         if ($timestamp > current_time('timestamp')) {
@@ -2441,6 +2445,22 @@ class Content_API
 			'content-api-settings',
 			'setting_section'
 		);
+
+		add_settings_field(
+			'last_accessed_notification',
+			'Last Accessed Notification',
+			array($this, 'last_accessed_notification_callback'),
+			'content-api-settings',
+			'setting_section'
+		);
+
+		add_settings_field(
+			'last_accessed_discord',
+			'Last Accessed Discord',
+			array($this, 'last_accessed_discord_callback'),
+			'content-api-settings',
+			'setting_section'
+		);
 	}
   
   /**
@@ -2482,6 +2502,32 @@ class Content_API
 	}
 
   /**
+   * Last Accessed Notification callback
+   *
+   * @return void
+   */
+  public function last_accessed_notification_callback() {
+    $option = isset($this->options['last_accessed_notification']) ? sanitize_text_field($this->options['last_accessed_notification']) : '';
+		?>
+    <input type="checkbox" name="content_api_options_polyplugins[last_accessed_notification]" id="last_accessed_notification" <?php esc_attr(checked(1, $option, true)); ?> /> <?php echo esc_html__('Yes', 'content-api'); ?>
+    <p>This will send an email to the email under Settings -> General when time has exceeded "Last Accessed Error Time".</p>
+    <?php
+	}
+  
+  /**
+   * Last Accessed Discord callback
+   *
+   * @return void
+   */
+  public function last_accessed_discord_callback() {
+    $option = isset($this->options['last_accessed_discord']) ? sanitize_text_field($this->options['last_accessed_discord']) : '';
+    ?>
+		<input class="regular-text" type="password" name="content_api_options_polyplugins[last_accessed_discord]" id="last_accessed_discord" value="<?php echo esc_html($option); ?>">
+    <p>Enter your Discord Webhook URL to get a Discord alert when time has exceeded "Last Accessed Error Time".</p>
+    <?php
+	}
+
+  /**
    * Sanitize Options
    *
    * @param  array $input Array of option inputs
@@ -2502,6 +2548,16 @@ class Content_API
 
     if (isset($input['last_accessed_error_time']) && $input['last_accessed_error_time']) {
       $sanitary_values['last_accessed_error_time'] = intval($input['last_accessed_error_time']);
+    }
+
+    if (isset($input['last_accessed_notification']) && $input['last_accessed_notification']) {
+      $sanitary_values['last_accessed_notification'] = $input['last_accessed_notification'] === 'on' ? true : false;
+    } else {
+      $sanitary_values['last_accessed_notification'] = false;
+    }
+
+    if (isset($input['last_accessed_discord']) && $input['last_accessed_discord']) {
+      $sanitary_values['last_accessed_discord'] = sanitize_text_field($input['last_accessed_discord']);
     }
 
     return $sanitary_values;
@@ -2544,6 +2600,174 @@ class Content_API
       </div>
     <?php endif; ?>
     <?php
+  }
+  
+  /**
+   * Maybe send last accessed Discord notification
+   *
+   * @return void
+   */
+  public function maybe_send_last_accessed_discord_notification() {
+    $this->options = get_option('content_api_options_polyplugins');
+
+    if (empty($this->options['last_accessed_enabled'])) {
+      return;
+    }
+
+    // Prevent multiple runs in a short period
+    if (get_transient('content_api_last_accessed_discord_lock')) {
+      return; // Already running, exit early
+    }
+
+    set_transient('content_api_last_accessed_discord_lock', 1, 300);
+
+    $last_accessed = get_option('content_api_last_accessed_polyplugins');
+
+    if (!$last_accessed) {
+      delete_transient('content_api_last_accessed_discord_lock');
+      return;
+    }
+
+    $threshold                 = isset($this->options['last_accessed_error_time']) ? intval($this->options['last_accessed_error_time']) : 0;
+    $minutes_since_last_access = (time() - intval($last_accessed)) / 60;
+    $webhook_url               = isset($this->options['last_accessed_discord']) ? $this->options['last_accessed_discord'] : '';
+
+    if (!$webhook_url) {
+      delete_transient('content_api_last_accessed_discord_lock');
+      return;
+    }
+
+    // Track last notification state
+    $notified_error      = get_option('content_api_last_accessed_error_notified');
+    $notified_recovered  = get_option('content_api_last_accessed_recovered_notified');
+    $notified_initial    = get_option('content_api_last_accessed_initial_notified');
+
+    if ($last_accessed && !$notified_initial) {
+      $message = array(
+        'content' => "⚡ Connection Successful"
+      );
+
+      wp_remote_post($webhook_url, array(
+        'body'    => wp_json_encode($message),
+        'headers' => array('Content-Type' => 'application/json'),
+        'timeout' => 5,
+      ));
+
+      update_option('content_api_last_accessed_initial_notified', 1);
+      delete_transient('content_api_last_accessed_discord_lock');
+      return; // exit early; no need to check threshold yet
+    }
+
+    // Threshold exceeded -> send error notification once
+    if ($threshold && $minutes_since_last_access > $threshold) {
+      if (!$notified_error) {
+        $message = array(
+          'content' => sprintf(
+            "⚠️ Connection lost. Last accessed %d minutes ago.",
+            $minutes_since_last_access,
+            $threshold
+          )
+        );
+
+        wp_remote_post($webhook_url, array(
+          'body'    => wp_json_encode($message),
+          'headers' => array('Content-Type' => 'application/json'),
+          'timeout' => 5,
+        ));
+
+        update_option('content_api_last_accessed_error_notified', 1);
+        delete_option('content_api_last_accessed_recovered_notified');
+      }
+    } else {
+      if ($notified_error && !$notified_recovered) {
+        $message = array(
+          'content' => "✅ Connection restored."
+        );
+
+        wp_remote_post($webhook_url, array(
+          'body'    => wp_json_encode($message),
+          'headers' => array('Content-Type' => 'application/json'),
+          'timeout' => 5,
+        ));
+
+        update_option('content_api_last_accessed_recovered_notified', 1);
+        delete_option('content_api_last_accessed_error_notified');
+      }
+    }
+
+    delete_transient('content_api_last_accessed_discord_lock');
+  }
+  
+  /**
+   * Maybe send last accessed email notification
+   *
+   * @return void
+   */
+  public function maybe_send_last_accessed_email_notification() {
+    $this->options = get_option('content_api_options_polyplugins');
+
+    // Check if notifications are enabled
+    if (empty($this->options['last_accessed_enabled']) || empty($this->options['last_accessed_notification'])) {
+      return;
+    }
+
+    // Prevent multiple runs in a short period
+    if (get_transient('content_api_last_accessed_email_lock')) {
+      return; // Already running, exit early
+    }
+
+    set_transient('content_api_last_accessed_email_lock', 1, 300);
+
+    $last_accessed = get_option('content_api_last_accessed_polyplugins');
+
+    if (!$last_accessed) {
+      delete_transient('content_api_last_accessed_email_lock');
+      return;
+    }
+
+    $threshold = isset($this->options['last_accessed_error_time']) ? intval($this->options['last_accessed_error_time']) : 0;
+    $minutes_since_last_access = (time() - intval($last_accessed)) / 60;
+
+    $admin_email = get_option('admin_email'); // default WP email
+
+    if (!$admin_email) {
+      delete_transient('content_api_last_accessed_email_lock');
+      return;
+    }
+
+    // Track last notification state
+    $notified_error     = get_option('content_api_last_accessed_email_error_notified');
+    $notified_recovered = get_option('content_api_last_accessed_email_recovered_notified');
+
+    $headers            = array('Content-Type: text/html; charset=UTF-8');
+
+    // Threshold exceeded -> send error email once
+    if ($threshold && $minutes_since_last_access > $threshold) {
+      if (!$notified_error) {
+        $subject = "⚠️ Content API Connection Lost";
+        $message = sprintf(
+          "The Content API has not been accessed for %.1f minutes.",
+          $minutes_since_last_access,
+        );
+
+        wp_mail($admin_email, $subject, $message, $headers);
+
+        update_option('content_api_last_accessed_email_error_notified', 1);
+        delete_option('content_api_last_accessed_email_recovered_notified');
+      }
+    } else {
+      if ($notified_error && !$notified_recovered) {
+        $subject = "✅ Content API Connection Restored";
+        $message = "Normal operation has resumed, and the system is accessible.";
+
+        wp_mail($admin_email, $subject, $message, $headers);
+
+        update_option('content_api_last_accessed_email_recovered_notified', 1);
+        delete_option('content_api_last_accessed_email_error_notified');
+      }
+    }
+    
+    delete_transient('content_api_last_accessed_email_lock');
   }
   
   /**
@@ -2835,12 +3059,12 @@ class Content_API
     $file_id = media_handle_sideload($file_array, $post_id);
 
     if (is_wp_error($file_id)) {
-      @unlink($tmp);
+      wp_delete_file($tmp);
       return;
     }
 
     // Clean up temporary file
-    @unlink($tmp);
+    wp_delete_file($tmp);
 
     return $file_id;
   }
