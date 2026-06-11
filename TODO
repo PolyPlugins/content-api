@@ -1,2 +1,13 @@
+# Update Checklist
+[ ] Update Readme
+[ ] Update Screenshots
+[ ] Plugin Scan
+
 # General
-[ ] Optimizations
+[ ] Make notifications run on a cron
+[ ] Have status attribute only accept correct arguments
+[ ] Add settings class
+[ ] Include last accessed time in responses
+[ ] Add endpoint to fetch last accessed time
+[ ] Bulk updates
+

@@ -4,7 +4,7 @@
  * Plugin Name: Content API
  * Plugin URI: https://www.polyplugins.com/contact/
  * Description: Adds various endpoints to create content
- * Version: 1.2.0
+ * Version: 1.2.1
  * Requires at least: 6.5
  * Requires PHP: 7.4
  * Author: Poly Plugins
@@ -2595,8 +2595,8 @@ class Content_API
         <p>Content API Last Accessed: <strong><?php echo esc_html($formatted_time); ?></strong></p>
       </div>
     <?php else : ?>
-      <div class="notice <?php echo esc_attr($notice_class); ?>" style="background-color: #D63638; color: #fff;">
-        <p>Content API Last Accessed: <strong><?php echo esc_html($formatted_time); ?></strong></p>
+      <div class="notice <?php echo esc_attr($notice_class); ?>" style="background-color: #D63638!important; color: #fff!important; border-color: #D63638!important; border-radius: 5px!important;">
+        <p style="color: #fff!important;">Content API Last Accessed: <strong><?php echo esc_html($formatted_time); ?></strong></p>
       </div>
     <?php endif; ?>
     <?php
@@ -2778,10 +2778,15 @@ class Content_API
    */
   public function has_permission(WP_REST_Request $request) {
     $this->options = get_option('content_api_options_polyplugins');
-    $token         = $this->options['token'];
+    $token         = isset($this->options['token']) ? $this->options['token'] : '';
+
+    if (empty($token)) {
+      return new WP_Error('not_authorized', "Not Authorized", array('status' => 401));
+    }
+
     $request_token = $this->get_request_token($request->get_header('authorization'));
-    
-    if ($request_token !== $token) {
+
+    if (empty($request_token) || !hash_equals($token, $request_token)) {
       return new WP_Error('not_authorized', "Not Authorized", array('status' => 401));
     }
 
@@ -3001,6 +3006,8 @@ class Content_API
    * @return string $token         The token
    */
   private function get_request_token($authorization) {
+    $token = '';
+
     if ($authorization) {
       $parts = explode(' ', $authorization);
 
