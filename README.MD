@@ -65,6 +65,10 @@ Yes, the plugin supports uploading images to the WordPress media library via the
 
 ## Changelog
 
+### 1.2.1
+* Updated: Tested up to
+* Bugfix: Notice design not correct since WP 7
+
 ### 1.2.0
 * Added: Previous beta feature to send email or Discord message if time elapsed is past last access time
 * Updated: Date function to gmdate and replaced unlink calls with wp_delete_file

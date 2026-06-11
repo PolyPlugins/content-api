@@ -1,8 +1,8 @@
 === Content API ===
 Contributors: polyplugins
 Tags: content api, rest api, content, creative, api
-Tested up to: 6.9
-Stable tag: 1.2.0
+Tested up to: 7.0
+Stable tag: 1.2.1
 Requires PHP: 7.4
 License: GPLv3
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
@@ -83,6 +83,10 @@ Yes, the plugin supports uploading images to the WordPress media library via the
 
 
 == Changelog ==
+
+= 1.2.1 =
+* Updated: Tested up to
+* Bugfix: Notice design not correct since WP 7
 
 = 1.2.0 =
 * Added: Previous beta feature to send email or Discord message if time elapsed is past last access time
